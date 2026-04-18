@@ -1,59 +1,50 @@
-# memory-skill
+# @taiters/ferret
 
-Semantic memory store for Claude Code. Index your codebase once, query it during every conversation — no more pasting code into context.
+Semantic codebase search for Claude Code. Index your codebase once, query it during every conversation — no more pasting code into context.
 
 **What it does:**
 - Parses Python, JS, TS by function/class (long methods windowed with overlap)
-- Splits markdown/README by heading sections  
+- Splits markdown/README by heading sections
 - Ingests git history in batches
 - Builds a call graph so Claude understands code flow
 - Embeds everything locally (free, offline, ~25MB model)
-- Stores vectors in Redis Stack for fast semantic search
+- Stores vectors in LanceDB for fast semantic search
 
 ---
 
 ## Prerequisites
 
 - Node.js 18+
-- Docker (for Redis Stack)
 
 ---
 
 ## Setup
 
-### 1. Start Redis Stack
+### 1. Install & link the CLI
 
 ```bash
-cd ~/memory-skill
-docker compose up -d
-```
-
-Redis UI available at http://localhost:8001 (optional, lets you browse stored vectors).
-
-### 2. Install & link the CLI
-
-```bash
-cd ~/memory-skill
+cd ~/repos/Taiters/memory-skill
 npm install
+npm run build
 npm link
 ```
 
-This makes `memory` available globally in your terminal.
+This makes `ferret` available globally in your terminal.
 
-### 3. Register the skill with Claude Code
+### 2. Register the skill with Claude Code
 
 Copy `SKILL.md` into your project's skills directory:
 
 ```bash
 mkdir -p /path/to/your/project/.claude/skills
-cp ~/memory-skill/SKILL.md /path/to/your/project/.claude/skills/memory.md
+cp ~/repos/Taiters/memory-skill/SKILL.md /path/to/your/project/.claude/skills/ferret.md
 ```
 
 Or install it globally for all Claude Code sessions:
 
 ```bash
 mkdir -p ~/.claude/skills
-cp ~/memory-skill/SKILL.md ~/.claude/skills/memory.md
+cp ~/repos/Taiters/memory-skill/SKILL.md ~/.claude/skills/ferret.md
 ```
 
 ---
@@ -63,48 +54,48 @@ cp ~/memory-skill/SKILL.md ~/.claude/skills/memory.md
 ### Index a codebase
 
 ```bash
-memory index /path/to/your/project
+ferret index /path/to/your/project
 ```
 
 Takes 1-5 minutes depending on codebase size. The embedding model downloads once (~25MB) on first run.
 
 Options:
 ```bash
-memory index . --git-limit 200   # ingest more git history
-memory index . --verbose         # show skipped files
+ferret index . --git-limit 200   # ingest more git history
+ferret index . --verbose         # show skipped files
 ```
 
 ### Search
 
 ```bash
-memory search "authentication middleware"
-memory search "how does payment work" --graph   # include call graph
-memory search "recent changes" -k 10            # more results
+ferret search "authentication middleware"
+ferret search "how does payment work" --graph   # include call graph
+ferret search "recent changes" -k 10            # more results
 ```
 
 ### Call graph
 
 ```bash
-memory graph "validateToken"
-memory graph "processPayment" --depth 3
+ferret graph "validateToken"
+ferret graph "processPayment" --depth 3
 ```
 
 ### Stats
 
 ```bash
-memory stats
+ferret stats
 ```
 
 ---
 
 ## How Claude Code uses it
 
-Once `SKILL.md` is in `.claude/skills/`, Claude Code reads it at session start and knows to call `memory search` before answering questions about your code.
+Once `SKILL.md` is in `.claude/skills/`, Claude Code reads it at session start and knows to call `ferret search` before answering questions about your code.
 
 Example conversation:
 ```
 You:    "How does the auth system work?"
-Claude: [runs: memory search "authentication flow" --graph]
+Claude: [runs: ferret search "authentication flow" --graph]
 Claude: "Based on your codebase, auth works as follows:
          login() in src/auth/login.py:12-45 calls validateToken()
          which calls checkPermissions()..."
@@ -118,25 +109,23 @@ Claude grounds answers in your actual code without you needing to paste anything
 
 ```
 your project/
-└── .claude/skills/memory.md    ← Claude Code reads this
+└── .claude/skills/ferret.md    ← Claude Code reads this
 
-~/memory-skill/
-├── bin/memory.js               ← CLI entry point
-├── indexer.js                  ← orchestrates indexing
-├── search.js                   ← semantic search + graph
-├── embedder.js                 ← local transformers.js embeddings
-├── store.js                    ← Redis Stack interface
-├── tsLanguage.js               ← TypeScript grammar helper
-├── ingestion/
-│   ├── parser.js               ← tree-sitter chunker (py/js/ts)
-│   ├── markdown.js             ← heading-based md splitter
-│   └── git.js                  ← git log ingestion
-└── docker-compose.yml          ← Redis Stack
+~/repos/Taiters/memory-skill/
+├── src/
+│   ├── ferret.ts               ← CLI entry point
+│   ├── indexer.ts              ← orchestrates indexing
+│   ├── search.ts               ← semantic search + graph
+│   ├── embedder.ts             ← local transformers.js embeddings
+│   ├── store.ts                ← LanceDB interface
+│   └── ingestion/
+│       ├── parser.ts           ← tree-sitter chunker (py/js/ts)
+│       ├── markdown.ts         ← heading-based md splitter
+│       └── git.ts              ← git log ingestion
 
-Redis Stack (local):
-  - Vectors stored as HASH with HNSW index
-  - Call graph stored as adjacency list (HASH)
-  - FT.SEARCH for KNN vector queries
+LanceDB (local, file-based):
+  - Vectors stored in chunks table with HNSW index
+  - Call graph stored in graph table as adjacency list
 ```
 
 ---
@@ -146,7 +135,7 @@ Redis Stack (local):
 Re-index any time you want to refresh (full re-index, clears previous):
 
 ```bash
-memory index /path/to/project
+ferret index /path/to/project
 ```
 
 Takes the same time as initial indexing. Recommended after large refactors or when Claude seems to have stale context.
@@ -155,18 +144,13 @@ Takes the same time as initial indexing. Recommended after large refactors or wh
 
 ## Troubleshooting
 
-**`memory: command not found`**
+**`ferret: command not found`**
 ```bash
-cd ~/memory-skill && npm link
-```
-
-**`Redis connection refused`**
-```bash
-cd ~/memory-skill && docker compose up -d
+cd ~/repos/Taiters/memory-skill && npm run build && npm link
 ```
 
 **`No results found`**
-- Check `memory stats` — if total is 0, index first
+- Check `ferret stats` — if total is 0, index first
 - Try broader search terms
 - Lower similarity threshold is 30% — very specific queries may not match
 

@@ -1,17 +1,17 @@
 {
-  "name": "memory-skill",
+  "name": "@taiters/ferret",
   "version": "1.0.0",
-  "description": "Semantic memory store for Claude Code — codebase RAG via Redis Stack",
+  "description": "Semantic codebase search for Claude Code — index once, query every conversation",
   "type": "module",
   "bin": {
-    "memory": "./dist/memory.js"
+    "ferret": "./dist/ferret.js"
   },
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "index": "node dist/memory.js index",
-    "search": "node dist/memory.js search",
-    "stats": "node dist/memory.js stats"
+    "index": "node dist/ferret.js index",
+    "search": "node dist/ferret.js search",
+    "stats": "node dist/ferret.js stats"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.1.0",

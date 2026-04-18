@@ -22,7 +22,7 @@ const IGNORE_DIRS = [
   "**/.venv/**",
   "**/venv/**",
   "**/*.egg-info/**",
-  "**/.memory-skill/**",
+  "**/.ferret/**",
 ];
 
 const IGNORE_FILES = [

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A semantic memory system for Claude Code. It indexes codebases into a local LanceDB vector store and exposes a `memory` CLI for semantic search and call graph queries. The `SKILL.md` file is copied into other projects' `.claude/skills/` so Claude Code there can query this indexed memory.
+A semantic codebase search tool for Claude Code. It indexes codebases into a local LanceDB vector store and exposes a `ferret` CLI for semantic search and call graph queries. The `SKILL.md` file is copied into other projects' `.claude/skills/` so Claude Code there can query this indexed codebase.
 
 ## Prerequisites & Setup
 
@@ -15,15 +15,15 @@ A semantic memory system for Claude Code. It indexes codebases into a local Lanc
 ## CLI Commands
 
 ```bash
-memory index <path>                        # Index a codebase (full re-index, clears previous)
-memory index <path> --git-limit 200        # Ingest more git history
-memory index <path> --verbose              # Show skipped files
-memory search "<query>"                    # Semantic search
-memory search "<query>" --graph            # Search + call graph context
-memory search "<query>" -k 10             # More results (default 6)
-memory graph "<function>"                  # Call graph for a function
-memory graph "<function>" --depth 3        # Deeper call traversal
-memory stats                               # Chunk count + breakdown by category
+ferret index <path>                        # Index a codebase (full re-index, clears previous)
+ferret index <path> --git-limit 200        # Ingest more git history
+ferret index <path> --verbose              # Show skipped files
+ferret search "<query>"                    # Semantic search
+ferret search "<query>" --graph            # Search + call graph context
+ferret search "<query>" -k 10             # More results (default 6)
+ferret graph "<function>"                  # Call graph for a function
+ferret graph "<function>" --depth 3        # Deeper call traversal
+ferret stats                               # Chunk count + breakdown by category
 ```
 
 ## Architecture
@@ -34,7 +34,7 @@ The project is TypeScript (`src/`) compiled to `dist/` via `tsc`. Source uses ES
 ```
 src/
   types.ts              # Shared interfaces (Chunk, GraphEdges, etc.)
-  memory.ts             # CLI entry point (Commander.js)
+  ferret.ts             # CLI entry point (Commander.js)
   indexer.ts            # Indexing pipeline orchestrator
   embedder.ts           # Local embeddings via @huggingface/transformers
   search.ts             # Semantic search + call graph queries
@@ -59,11 +59,11 @@ dist/                   # Compiled output (gitignored)
 
 **Search** (`search.ts`): KNN vector search with 30% similarity threshold, optional call graph enrichment.
 
-**CLI entry point**: `dist/memory.js` (compiled from `src/memory.ts`) using Commander.js.
+**CLI entry point**: `dist/ferret.js` (compiled from `src/ferret.ts`) using Commander.js.
 
 ## Key Design Decisions
 
 - All embeddings are local (offline, private) — no external API calls for indexing/search
-- Full re-index on every `memory index` run (no incremental updates)
+- Full re-index on every `ferret index` run (no incremental updates)
 - Chunk IDs are MD5-based for deduplication
 - `SKILL.md` is the artifact installed into other projects — changes here affect how Claude Code behaves in those projects

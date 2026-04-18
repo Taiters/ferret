@@ -18,8 +18,8 @@ import { DEFAULT_MODEL } from "./embedder.js";
 const program = new Command();
 
 program
-  .name("memory")
-  .description("Semantic memory store for Claude Code")
+  .name("ferret")
+  .description("Semantic codebase search for Claude Code")
   .version("1.0.0");
 
 function resolveStore(explicitProjectPath?: string): Store {
@@ -30,7 +30,7 @@ function resolveStore(explicitProjectPath?: string): Store {
   if (detected) return new Store(localDbPath(detected));
   throw new Error(
     "No indexed project found in the current directory tree.\n" +
-    "Run: memory index <path>\n" +
+    "Run: ferret index <path>\n" +
     "Or specify: --project <path>",
   );
 }
@@ -52,14 +52,14 @@ function formatRelativeTime(isoDate: string): string {
   return `${days}d ago`;
 }
 
-// ── memory index <path> ───────────────────────────────────────────────────────
+// ── ferret index <path> ───────────────────────────────────────────────────────
 program
   .command("index <path>")
   .description("Index a codebase into the memory store")
   .option("--git-limit <n>", "Number of git commits to ingest", "50")
   .option("-v, --verbose", "Show skipped files")
   .option("--model <name>", "Embedding model to use", DEFAULT_MODEL)
-  .option("--gitignore", "Create .memory-skill/.gitignore to exclude db/ from version control")
+  .option("--gitignore", "Create .ferret/.gitignore to exclude db/ from version control")
   .action(async (projectPath: string, opts: { gitLimit: string; verbose?: boolean; model: string; gitignore?: boolean }) => {
     const absPath = path.resolve(projectPath);
     const store = new Store(localDbPath(absPath));
@@ -70,9 +70,9 @@ program
         model: opts.model,
       });
       if (opts.gitignore) {
-        const gitignorePath = path.join(absPath, ".memory-skill", ".gitignore");
+        const gitignorePath = path.join(absPath, ".ferret", ".gitignore");
         fs.writeFileSync(gitignorePath, "db/\n");
-        console.log("  Created .memory-skill/.gitignore (ignoring db/)");
+        console.log("  Created .ferret/.gitignore (ignoring db/)");
       }
     } catch (e) {
       console.error("Indexing failed:", e instanceof Error ? e.message : e);
@@ -82,7 +82,7 @@ program
     }
   });
 
-// ── memory search <query> ─────────────────────────────────────────────────────
+// ── ferret search <query> ─────────────────────────────────────────────────────
 program
   .command("search <query>")
   .description("Semantic search across indexed memory")
@@ -128,7 +128,7 @@ program
     }
   });
 
-// ── memory history <query> ────────────────────────────────────────────────────
+// ── ferret history <query> ────────────────────────────────────────────────────
 program
   .command("history <query>")
   .description("Search git history for commits related to a query")
@@ -155,7 +155,7 @@ program
     }
   });
 
-// ── memory graph <fn-name> ────────────────────────────────────────────────────
+// ── ferret graph <fn-name> ────────────────────────────────────────────────────
 program
   .command("graph <function>")
   .description("Show call graph around a function")
@@ -175,7 +175,7 @@ program
     }
   });
 
-// ── memory stats ──────────────────────────────────────────────────────────────
+// ── ferret stats ──────────────────────────────────────────────────────────────
 program
   .command("stats")
   .description("Show memory store statistics")
@@ -186,7 +186,7 @@ program
       if (opts.all) {
         const projects = readRegistry();
         if (projects.length === 0) {
-          console.log("No projects indexed yet. Run: memory index <path>");
+          console.log("No projects indexed yet. Run: ferret index <path>");
           return;
         }
         for (const p of projects) {
@@ -214,7 +214,7 @@ program
         try {
           const { total, graphNodes } = await store.getStats();
           const byCategory = await store.getAllByCategory();
-          console.log("\nMemory Store Stats");
+          console.log("\nFerret Stats");
           console.log("──────────────────");
           console.log(`Total chunks : ${total}`);
           console.log(`Graph nodes  : ${graphNodes}`);
@@ -234,7 +234,7 @@ program
     }
   });
 
-// ── memory register [path] ────────────────────────────────────────────────────
+// ── ferret register [path] ────────────────────────────────────────────────────
 program
   .command("register [path]")
   .description("Register an existing indexed project in the local registry")
@@ -244,7 +244,7 @@ program
 
     if (!fs.existsSync(dbPath)) {
       console.error(`No index found at ${dbPath}`);
-      console.error("Run: memory index <path>");
+      console.error("Run: ferret index <path>");
       process.exit(1);
     }
 
@@ -257,14 +257,14 @@ program
     }
   });
 
-// ── memory projects ───────────────────────────────────────────────────────────
+// ── ferret projects ───────────────────────────────────────────────────────────
 program
   .command("projects")
   .description("List all indexed projects")
   .action(() => {
     const projects = readRegistry();
     if (projects.length === 0) {
-      console.log("No projects indexed yet. Run: memory index <path>");
+      console.log("No projects indexed yet. Run: ferret index <path>");
       return;
     }
     console.log("\nIndexed Projects");

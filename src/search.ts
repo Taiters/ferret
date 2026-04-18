@@ -26,7 +26,7 @@ export async function searchMemory(query: string, store: Store, { topK = 6, grap
     .slice(0, topK);
 
   if (hits.length === 0) {
-    return `No relevant memories found for: "${query}"\nTry rephrasing or check if the codebase has been indexed (run: memory index <path>)`;
+    return `No relevant results found for: "${query}"\nTry rephrasing or check if the codebase has been indexed (run: ferret index <path>)`;
   }
 
   return formatHits(query, hits, store, graph, projectRoot);
@@ -50,7 +50,7 @@ export async function searchHistory(query: string, store: Store, { topK = 6, fil
 
   if (hits.length === 0) {
     const fileNote = file ? ` touching "${file}"` : "";
-    return `No relevant commits found for: "${query}"${fileNote}\nCheck if the codebase has been indexed (run: memory index <path>)`;
+    return `No relevant commits found for: "${query}"${fileNote}\nCheck if the codebase has been indexed (run: ferret index <path>)`;
   }
 
   return formatHistoryHits(query, hits);
@@ -63,7 +63,7 @@ export async function searchHistory(query: string, store: Store, { topK = 6, fil
 export async function searchAllProjects(query: string, { topK = 6, graph = false, model, categories = ["code"], minScore = 0 }: SearchOptions = {}): Promise<string> {
   const projects = readRegistry();
   if (projects.length === 0) {
-    return "No projects indexed yet. Run: memory index <path>";
+    return "No projects indexed yet. Run: ferret index <path>";
   }
 
   const queryVec = await embed(query, model);

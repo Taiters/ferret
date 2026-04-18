@@ -4,7 +4,7 @@ import fs from "fs";
 import type { ProjectMeta } from "./types.js";
 import { DEFAULT_MODEL } from "./embedder.js";
 
-const REGISTRY_PATH = path.join(os.homedir(), ".local", "share", "memory-skill", "registry.json");
+const REGISTRY_PATH = path.join(os.homedir(), ".local", "share", "ferret", "registry.json");
 
 export interface ProjectConfig {
   model: string;
@@ -12,7 +12,7 @@ export interface ProjectConfig {
 }
 
 export function projectConfigPath(projectRoot: string): string {
-  return path.join(projectRoot, ".memory-skill", "index-info.json");
+  return path.join(projectRoot, ".ferret", "index-info.json");
 }
 
 export function writeProjectConfig(projectRoot: string, config: ProjectConfig): void {
@@ -32,7 +32,7 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
 }
 
 export function localDbPath(projectRoot: string): string {
-  return path.join(projectRoot, ".memory-skill", "db");
+  return path.join(projectRoot, ".ferret", "db");
 }
 
 export function readRegistry(): ProjectMeta[] {
@@ -63,12 +63,12 @@ export function readProjectModel(projectRoot: string): string {
   return projects.find((p) => p.path === projectRoot)?.model ?? DEFAULT_MODEL;
 }
 
-// Walk up the directory tree from cwd looking for a .memory-skill/db directory.
+// Walk up the directory tree from cwd looking for a .ferret/db directory.
 // Returns the project root if found, null otherwise.
 export function resolveProjectFromCwd(cwd = process.cwd()): string | null {
   let dir = cwd;
   while (true) {
-    if (fs.existsSync(path.join(dir, ".memory-skill", "db"))) return dir;
+    if (fs.existsSync(path.join(dir, ".ferret", "db"))) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) return null;
     dir = parent;
