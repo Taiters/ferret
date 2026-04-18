@@ -40,3 +40,9 @@ export interface StoreStats {
   total: number;
   graphNodes: number;
 }
+
+export interface ProjectMeta {
+  path: string;      // absolute path to project root
+  name: string;      // basename
+  indexedAt: string; // ISO 8601
+}

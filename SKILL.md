@@ -17,6 +17,8 @@ Use memory search **before** answering questions about:
 ```bash
 memory search "<natural language query>"
 ```
+Search automatically scopes to the current project (detected from your working directory).
+
 Examples:
 ```bash
 memory search "authentication middleware"
@@ -38,9 +40,28 @@ memory graph "<function_name>" --depth 3
 ```
 Use when the user mentions a specific function and wants to understand its relationships.
 
+### Search across all indexed projects
+```bash
+memory search "<query>" --all
+```
+Use `--all` when exploring across multiple repos or looking for a pattern that might exist in any indexed project. Results are ranked by relevance and labelled with the project name.
+
+### Search a specific project explicitly
+```bash
+memory search "<query>" --project /path/to/project
+```
+Use when auto-detection fails or you want to search a project other than the current one.
+
+### List all indexed projects
+```bash
+memory projects
+```
+Use to discover what projects are available before doing a cross-project search.
+
 ### Check what's indexed
 ```bash
 memory stats
+memory stats --all
 ```
 
 ### Index or re-index a codebase
@@ -48,7 +69,7 @@ memory stats
 memory index <path>
 memory index /path/to/project
 ```
-Run this when the user asks to index a project, or when search returns no results and a codebase should be available.
+Each project is stored independently — indexing one project does not affect others. Run this when the user asks to index a project, or when search returns no results and a codebase should be available.
 
 ## How to use results
 
@@ -66,19 +87,24 @@ User: "How does the auth system work?"
 3. Answer based on the actual code, citing file locations
 4. If you need more detail on a specific function: `memory graph "validateToken"`
 
+User: "Do any of our other repos handle auth differently?"
+
+1. Run: `memory projects` to see what's indexed
+2. Run: `memory search "authentication" --all` to compare across projects
+
 ## Troubleshooting
 
 If `memory` command is not found:
 ```bash
-cd ~/memory-skill && npm install && npm link
-```
-
-If Redis is not running:
-```bash
-cd ~/memory-skill && docker compose up -d
+cd ~/repos/Taiters/memory-skill && npm install && npm run build && npm link
 ```
 
 If no results are returned, the codebase may not be indexed:
 ```bash
 memory index /path/to/project
+```
+
+If search returns results from the wrong project, you may be outside the project directory tree. Use `--project` to be explicit:
+```bash
+memory search "<query>" --project /path/to/correct/project
 ```

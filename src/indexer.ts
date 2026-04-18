@@ -5,7 +5,8 @@ import { parseFile, chunkPlainText } from "./ingestion/parser.js";
 import { parseMarkdown } from "./ingestion/markdown.js";
 import { parseGitHistory } from "./ingestion/git.js";
 import { embedBatch } from "./embedder.js";
-import { ensureIndex, upsertChunk, flushAll, setGraphEdges } from "./store.js";
+import { Store } from "./store.js";
+import { registerProject } from "./projects.js";
 import type { Chunk, IndexOptions } from "./types.js";
 
 // ── Ignore patterns ───────────────────────────────────────────────────────────
@@ -52,15 +53,16 @@ function progress(label: string, current: number, total: number): void {
 // ── Main ──────────────────────────────────────────────────────────────────────
 export async function indexProject(
   projectPath: string,
+  store: Store,
   { gitLimit = 100, verbose = false }: IndexOptions = {},
 ): Promise<void> {
   const absPath = path.resolve(projectPath);
   console.log(`\n📂 Indexing: ${absPath}\n`);
 
-  await ensureIndex();
+  await store.ensureIndex();
 
   console.log("  🗑  Flushing existing index...");
-  await flushAll();
+  await store.flushAll();
 
   // ── 1. Collect files ───────────────────────────────────────────────────────
   const allFiles = await glob("**/*", {
@@ -132,10 +134,10 @@ export async function indexProject(
   const vectors = await embedBatch(texts, (i, t) => progress("embed", i, t));
 
   // ── 4. Store chunks + vectors ──────────────────────────────────────────────
-  console.log("\n  💾 Writing to Redis...");
+  console.log("\n  💾 Storing chunks...");
   for (let i = 0; i < allChunks.length; i++) {
     progress("store", i + 1, allChunks.length);
-    await upsertChunk({ ...allChunks[i], vector: vectors[i] });
+    await store.upsertChunk({ ...allChunks[i], vector: vectors[i] });
   }
 
   // ── 5. Build calledBy edges and store graph ────────────────────────────────
@@ -150,7 +152,7 @@ export async function indexProject(
   }
 
   for (const [name, { calls }] of callGraph) {
-    await setGraphEdges(name, {
+    await store.setGraphEdges(name, {
       calls,
       calledBy: [...(calledBy.get(name) ?? [])],
     });
@@ -160,6 +162,7 @@ export async function indexProject(
   const byCategory: Record<string, number> = {};
   for (const c of allChunks) byCategory[c.category] = (byCategory[c.category] ?? 0) + 1;
 
+  registerProject(absPath);
   console.log("\n  ✅ Done!\n");
   console.log("  Indexed:");
   for (const [cat, count] of Object.entries(byCategory)) {

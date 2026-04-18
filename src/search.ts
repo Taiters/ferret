@@ -1,6 +1,7 @@
 import { embed } from "./embedder.js";
-import { search as vectorSearch, getGraphEdges } from "./store.js";
-import type { SearchOptions } from "./types.js";
+import { Store } from "./store.js";
+import { readRegistry, localDbPath } from "./projects.js";
+import type { SearchHit, SearchOptions } from "./types.js";
 
 const SIMILARITY_THRESHOLD = 0.3;
 
@@ -8,15 +9,76 @@ const SIMILARITY_THRESHOLD = 0.3;
  * Semantic search + optional call graph expansion.
  * Returns formatted text ready for Claude to consume.
  */
-export async function searchMemory(query: string, { topK = 6, graph = false }: SearchOptions = {}): Promise<string> {
+export async function searchMemory(query: string, store: Store, { topK = 6, graph = false }: SearchOptions = {}): Promise<string> {
   const queryVec = await embed(query);
-  const results = await vectorSearch(queryVec, topK);
+  const results = await store.search(queryVec, topK);
   const hits = results.filter((r) => r.score >= SIMILARITY_THRESHOLD);
 
   if (hits.length === 0) {
     return `No relevant memories found for: "${query}"\nTry rephrasing or check if the codebase has been indexed (run: memory index <path>)`;
   }
 
+  return formatHits(query, hits, store, graph);
+}
+
+/**
+ * Search across all projects in the registry, aggregating and ranking results.
+ */
+export async function searchAllProjects(query: string, { topK = 6, graph = false }: SearchOptions = {}): Promise<string> {
+  const projects = readRegistry();
+  if (projects.length === 0) {
+    return "No projects indexed yet. Run: memory index <path>";
+  }
+
+  const queryVec = await embed(query);
+
+  type HitWithProject = SearchHit & { projectName: string; projectStore: Store };
+  const allHits: HitWithProject[] = [];
+
+  for (const project of projects) {
+    const store = new Store(localDbPath(project.path));
+    try {
+      const results = await store.search(queryVec, topK);
+      for (const hit of results) {
+        if (hit.score >= SIMILARITY_THRESHOLD) {
+          allHits.push({ ...hit, projectName: project.name, projectStore: store });
+        }
+      }
+    } finally {
+      await store.disconnect();
+    }
+  }
+
+  if (allHits.length === 0) {
+    return `No relevant memories found for: "${query}" across any indexed project.`;
+  }
+
+  allHits.sort((a, b) => b.score - a.score);
+  const topHits = allHits.slice(0, topK);
+
+  const lines: string[] = [
+    `MEMORY SEARCH (all projects): "${query}"`,
+    `Found ${topHits.length} relevant chunks across ${projects.length} project(s)`,
+    "─".repeat(60),
+  ];
+
+  for (const hit of topHits) {
+    const pct = Math.round(hit.score * 100);
+    lines.push(`\n[${pct}% match] [${hit.projectName}] ${hit.category.toUpperCase()} — ${hit.name}`);
+    lines.push(`File: ${hit.file}:${hit.start_line}-${hit.end_line}`);
+    lines.push("```");
+    const content =
+      hit.content.length > 1500
+        ? hit.content.slice(0, 1500) + "\n... [truncated, see file for full content]"
+        : hit.content;
+    lines.push(content);
+    lines.push("```");
+  }
+
+  return lines.join("\n");
+}
+
+async function formatHits(query: string, hits: SearchHit[], store: Store, graph: boolean): Promise<string> {
   const lines: string[] = [
     `MEMORY SEARCH: "${query}"`,
     `Found ${hits.length} relevant chunks${graph ? " (with call graph)" : ""}`,
@@ -29,7 +91,7 @@ export async function searchMemory(query: string, { topK = 6, graph = false }: S
     lines.push(`File: ${hit.file}:${hit.start_line}-${hit.end_line}`);
 
     if (graph && hit.category === "code") {
-      const edges = await getGraphEdges(hit.name);
+      const edges = await store.getGraphEdges(hit.name);
       if (edges.calls.length) lines.push(`Calls:     ${edges.calls.join(", ")}`);
       if (edges.calledBy.length) lines.push(`Called by: ${edges.calledBy.join(", ")}`);
     }
@@ -49,7 +111,7 @@ export async function searchMemory(query: string, { topK = 6, graph = false }: S
 /**
  * Show call graph around a specific function name.
  */
-export async function showGraph(fnName: string, depth = 2): Promise<string> {
+export async function showGraph(fnName: string, store: Store, depth = 2): Promise<string> {
   const visited = new Set<string>();
   const lines: string[] = [`CALL GRAPH: ${fnName}`, "─".repeat(60)];
 
@@ -57,7 +119,7 @@ export async function showGraph(fnName: string, depth = 2): Promise<string> {
     if (visited.has(name) || d > depth) return;
     visited.add(name);
 
-    const edges = await getGraphEdges(name);
+    const edges = await store.getGraphEdges(name);
     lines.push(`${"  ".repeat(indent)}${indent === 0 ? "◉" : "→"} ${name}`);
 
     if (edges.calledBy.length && indent === 0) {
