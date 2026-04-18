@@ -4,6 +4,6 @@ import TSModule from "tree-sitter-typescript";
 
 const { typescript, tsx } = TSModule;
 
-export function typescriptLanguage(ext) {
+export function typescriptLanguage(ext: string): unknown {
   return ext === ".tsx" ? tsx : typescript;
 }

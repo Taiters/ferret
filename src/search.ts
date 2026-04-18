@@ -1,5 +1,6 @@
 import { embed } from "./embedder.js";
 import { search as vectorSearch, getGraphEdges } from "./store.js";
+import type { SearchOptions } from "./types.js";
 
 const SIMILARITY_THRESHOLD = 0.3;
 
@@ -7,16 +8,16 @@ const SIMILARITY_THRESHOLD = 0.3;
  * Semantic search + optional call graph expansion.
  * Returns formatted text ready for Claude to consume.
  */
-export async function searchMemory(query, { topK = 6, graph = false } = {}) {
+export async function searchMemory(query: string, { topK = 6, graph = false }: SearchOptions = {}): Promise<string> {
   const queryVec = await embed(query);
-  const results  = await vectorSearch(queryVec, topK);
-  const hits     = results.filter((r) => r.score >= SIMILARITY_THRESHOLD);
+  const results = await vectorSearch(queryVec, topK);
+  const hits = results.filter((r) => r.score >= SIMILARITY_THRESHOLD);
 
   if (hits.length === 0) {
     return `No relevant memories found for: "${query}"\nTry rephrasing or check if the codebase has been indexed (run: memory index <path>)`;
   }
 
-  const lines = [
+  const lines: string[] = [
     `MEMORY SEARCH: "${query}"`,
     `Found ${hits.length} relevant chunks${graph ? " (with call graph)" : ""}`,
     "─".repeat(60),
@@ -29,15 +30,15 @@ export async function searchMemory(query, { topK = 6, graph = false } = {}) {
 
     if (graph && hit.category === "code") {
       const edges = await getGraphEdges(hit.name);
-      if (edges.calls.length)    lines.push(`Calls:     ${edges.calls.join(", ")}`);
+      if (edges.calls.length) lines.push(`Calls:     ${edges.calls.join(", ")}`);
       if (edges.calledBy.length) lines.push(`Called by: ${edges.calledBy.join(", ")}`);
     }
 
     lines.push("```");
-    // Truncate very long content for readability
-    const content = hit.content.length > 1500
-      ? hit.content.slice(0, 1500) + "\n... [truncated, see file for full content]"
-      : hit.content;
+    const content =
+      hit.content.length > 1500
+        ? hit.content.slice(0, 1500) + "\n... [truncated, see file for full content]"
+        : hit.content;
     lines.push(content);
     lines.push("```");
   }
@@ -48,11 +49,11 @@ export async function searchMemory(query, { topK = 6, graph = false } = {}) {
 /**
  * Show call graph around a specific function name.
  */
-export async function showGraph(fnName, depth = 2) {
-  const visited = new Set();
-  const lines   = [`CALL GRAPH: ${fnName}`, "─".repeat(60)];
+export async function showGraph(fnName: string, depth = 2): Promise<string> {
+  const visited = new Set<string>();
+  const lines: string[] = [`CALL GRAPH: ${fnName}`, "─".repeat(60)];
 
-  async function walk(name, indent, d) {
+  async function walk(name: string, indent: number, d: number): Promise<void> {
     if (visited.has(name) || d > depth) return;
     visited.add(name);
 

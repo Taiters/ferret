@@ -10,7 +10,7 @@ A semantic memory system for Claude Code. It indexes codebases into a local Redi
 
 - Node.js 18+, Docker
 - Start Redis Stack: `docker compose up -d` (Redis on port 6379, UI at http://localhost:8001)
-- Install CLI: `npm install && npm link`
+- Install CLI: `npm install && npm run build && npm link`
 
 ## CLI Commands
 
@@ -28,19 +28,38 @@ memory stats                               # Chunk count + breakdown by category
 
 ## Architecture
 
-The project uses ES modules (`"type": "module"` in package.json).
+The project is TypeScript (`src/`) compiled to `dist/` via `tsc`. Source uses ES modules (`"type": "module"`).
 
-**Indexing pipeline** (`indexer.js` orchestrates):
+**Source layout**:
+```
+src/
+  types.ts              # Shared interfaces (Chunk, GraphEdges, etc.)
+  memory.ts             # CLI entry point (Commander.js)
+  indexer.ts            # Indexing pipeline orchestrator
+  embedder.ts           # Local embeddings via @huggingface/transformers
+  search.ts             # Semantic search + call graph queries
+  store.ts              # Redis Stack interface
+  ingestion/
+    parser.ts           # Tree-sitter code parser + call graph builder
+    markdown.ts         # Heading-based markdown chunker
+    git.ts              # Git history ingestion
+    tsLanguage.ts       # TypeScript grammar resolver
+dist/                   # Compiled output (gitignored)
+```
+
+**Build**: `npm run build` (runs `tsc`). `npm run build:watch` for development.
+
+**Indexing pipeline** (`indexer.ts` orchestrates):
 1. File discovery via glob with ignore lists (node_modules, dist, lock files, files >500KB)
-2. Code parsing (`ingestion/parser.js`): tree-sitter extracts functions/classes for Python/JS/TS; long functions (>150 lines) are windowed with 100-line windows + 20-line overlap; call graph built simultaneously
-3. Markdown parsing (`ingestion/markdown.js`): splits by headings (h1-h4) with same windowing
-4. Git history (`ingestion/git.js`): batches of 10 commits, up to 100 by default
-5. Embedding (`embedder.js`): Xenova/all-MiniLM-L6-v2, 384 dimensions, truncates to 2000 chars, cached at `~/.cache/memory-skill/`
-6. Storage (`store.js`): Redis HNSW index for vectors (`mem:` key prefix), adjacency list for call graph (`graph:` key prefix)
+2. Code parsing (`ingestion/parser.ts`): tree-sitter extracts functions/classes for Python/JS/TS; long functions (>150 lines) are windowed with 100-line windows + 20-line overlap; call graph built simultaneously
+3. Markdown parsing (`ingestion/markdown.ts`): splits by headings (h1-h4) with same windowing
+4. Git history (`ingestion/git.ts`): batches of 10 commits, up to 100 by default
+5. Embedding (`embedder.ts`): Xenova/all-MiniLM-L6-v2 via @huggingface/transformers, 384 dimensions, truncates to 2000 chars, cached at `~/.cache/memory-skill/`
+6. Storage (`store.ts`): Redis HNSW index for vectors (`mem:` key prefix), adjacency list for call graph (`graph:` key prefix)
 
-**Search** (`search.js`): KNN vector search with 30% similarity threshold, optional call graph enrichment.
+**Search** (`search.ts`): KNN vector search with 30% similarity threshold, optional call graph enrichment.
 
-**CLI entry point**: `bin/memory.js` using Commander.js.
+**CLI entry point**: `dist/memory.js` (compiled from `src/memory.ts`) using Commander.js.
 
 ## Key Design Decisions
 

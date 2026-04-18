@@ -17,14 +17,14 @@ program
   .description("Index a codebase into the memory store")
   .option("--git-limit <n>", "Number of git commits to ingest", "100")
   .option("-v, --verbose", "Show skipped files")
-  .action(async (projectPath, opts) => {
+  .action(async (projectPath: string, opts: { gitLimit: string; verbose?: boolean }) => {
     try {
       await indexProject(projectPath, {
         gitLimit: parseInt(opts.gitLimit),
-        verbose:  opts.verbose,
+        verbose: opts.verbose,
       });
     } catch (e) {
-      console.error("Indexing failed:", e.message);
+      console.error("Indexing failed:", e instanceof Error ? e.message : e);
       process.exit(1);
     } finally {
       await disconnect();
@@ -37,16 +37,17 @@ program
   .description("Semantic search across indexed memory")
   .option("-k, --top-k <n>", "Number of results", "6")
   .option("-g, --graph", "Include call graph edges in results")
-  .action(async (query, opts) => {
+  .action(async (query: string, opts: { topK: string; graph?: boolean }) => {
     try {
       const result = await searchMemory(query, {
-        topK:  parseInt(opts.topK),
+        topK: parseInt(opts.topK),
         graph: opts.graph,
       });
       console.log(result);
     } catch (e) {
-      console.error("Search failed:", e.message);
-      if (e.message.includes("connect")) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("Search failed:", msg);
+      if (msg.includes("connect")) {
         console.error("Is Redis running? Try: docker compose up -d");
       }
       process.exit(1);
@@ -60,12 +61,12 @@ program
   .command("graph <function>")
   .description("Show call graph around a function")
   .option("-d, --depth <n>", "Graph traversal depth", "2")
-  .action(async (fnName, opts) => {
+  .action(async (fnName: string, opts: { depth: string }) => {
     try {
       const result = await showGraph(fnName, parseInt(opts.depth));
       console.log(result);
     } catch (e) {
-      console.error("Graph failed:", e.message);
+      console.error("Graph failed:", e instanceof Error ? e.message : e);
       process.exit(1);
     } finally {
       await disconnect();
@@ -90,8 +91,9 @@ program
       }
       console.log();
     } catch (e) {
-      console.error("Stats failed:", e.message);
-      if (e.message.includes("connect")) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("Stats failed:", msg);
+      if (msg.includes("connect")) {
         console.error("Is Redis running? Try: docker compose up -d");
       }
       process.exit(1);
