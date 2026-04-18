@@ -2,7 +2,7 @@
 import path from "path";
 import { Command } from "commander";
 import { indexProject } from "./indexer.js";
-import { searchMemory, searchAllProjects, showGraph } from "./search.js";
+import { searchMemory, searchAllProjects, searchHistory, showGraph } from "./search.js";
 import { Store } from "./store.js";
 import {
   localDbPath,
@@ -44,7 +44,7 @@ function formatRelativeTime(isoDate: string): string {
 program
   .command("index <path>")
   .description("Index a codebase into the memory store")
-  .option("--git-limit <n>", "Number of git commits to ingest", "100")
+  .option("--git-limit <n>", "Number of git commits to ingest", "50")
   .option("-v, --verbose", "Show skipped files")
   .action(async (projectPath: string, opts: { gitLimit: string; verbose?: boolean }) => {
     const absPath = path.resolve(projectPath);
@@ -93,6 +93,30 @@ program
     } catch (e) {
       console.error("Search failed:", e instanceof Error ? e.message : e);
       process.exit(1);
+    }
+  });
+
+// ── memory history <query> ────────────────────────────────────────────────────
+program
+  .command("history <query>")
+  .description("Search git history for commits related to a query")
+  .option("-k, --top-k <n>", "Number of results", "6")
+  .option("--file <path>", "Filter to commits that touched a specific file")
+  .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
+  .action(async (query: string, opts: { topK: string; file?: string; project?: string }) => {
+    let store: Store | undefined;
+    try {
+      store = resolveStore(opts.project);
+      const result = await searchHistory(query, store, {
+        topK: parseInt(opts.topK),
+        file: opts.file,
+      });
+      console.log(result);
+    } catch (e) {
+      console.error("History search failed:", e instanceof Error ? e.message : e);
+      process.exit(1);
+    } finally {
+      await store?.disconnect();
     }
   });
 

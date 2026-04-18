@@ -5,14 +5,23 @@ import type { SearchHit, SearchOptions } from "./types.js";
 
 const SIMILARITY_THRESHOLD = 0.3;
 
+export interface HistoryOptions {
+  topK?: number;
+  file?: string;
+}
+
 /**
  * Semantic search + optional call graph expansion.
+ * Excludes git category chunks — use searchHistory for commit queries.
  * Returns formatted text ready for Claude to consume.
  */
 export async function searchMemory(query: string, store: Store, { topK = 6, graph = false }: SearchOptions = {}): Promise<string> {
   const queryVec = await embed(query);
-  const results = await store.search(queryVec, topK);
-  const hits = results.filter((r) => r.score >= SIMILARITY_THRESHOLD);
+  // Fetch extra results to account for git chunks being filtered out
+  const results = await store.search(queryVec, topK * 2);
+  const hits = results
+    .filter((r) => r.score >= SIMILARITY_THRESHOLD && r.category !== "git")
+    .slice(0, topK);
 
   if (hits.length === 0) {
     return `No relevant memories found for: "${query}"\nTry rephrasing or check if the codebase has been indexed (run: memory index <path>)`;
@@ -22,7 +31,32 @@ export async function searchMemory(query: string, store: Store, { topK = 6, grap
 }
 
 /**
+ * Search git history for commits related to a query.
+ * Optionally filter to commits that touched a specific file path.
+ */
+export async function searchHistory(query: string, store: Store, { topK = 6, file }: HistoryOptions = {}): Promise<string> {
+  const queryVec = await embed(query);
+  const results = await store.search(queryVec, topK * 4);
+
+  let hits = results.filter((r) => r.score >= SIMILARITY_THRESHOLD && r.category === "git");
+
+  if (file) {
+    hits = hits.filter((r) => r.tags.some((t) => t.includes(file)));
+  }
+
+  hits = hits.slice(0, topK);
+
+  if (hits.length === 0) {
+    const fileNote = file ? ` touching "${file}"` : "";
+    return `No relevant commits found for: "${query}"${fileNote}\nCheck if the codebase has been indexed (run: memory index <path>)`;
+  }
+
+  return formatHistoryHits(query, hits);
+}
+
+/**
  * Search across all projects in the registry, aggregating and ranking results.
+ * Excludes git category chunks.
  */
 export async function searchAllProjects(query: string, { topK = 6, graph = false }: SearchOptions = {}): Promise<string> {
   const projects = readRegistry();
@@ -38,9 +72,9 @@ export async function searchAllProjects(query: string, { topK = 6, graph = false
   for (const project of projects) {
     const store = new Store(localDbPath(project.path));
     try {
-      const results = await store.search(queryVec, topK);
+      const results = await store.search(queryVec, topK * 2);
       for (const hit of results) {
-        if (hit.score >= SIMILARITY_THRESHOLD) {
+        if (hit.score >= SIMILARITY_THRESHOLD && hit.category !== "git") {
           allHits.push({ ...hit, projectName: project.name, projectStore: store });
         }
       }
@@ -103,6 +137,40 @@ async function formatHits(query: string, hits: SearchHit[], store: Store, graph:
         : hit.content;
     lines.push(content);
     lines.push("```");
+  }
+
+  return lines.join("\n");
+}
+
+function formatHistoryHits(query: string, hits: SearchHit[]): string {
+  const lines: string[] = [
+    `GIT HISTORY: "${query}"`,
+    `Found ${hits.length} relevant commit(s)`,
+    "─".repeat(60),
+  ];
+
+  for (const hit of hits) {
+    const pct = Math.round(hit.score * 100);
+    // Name format: "commit abc12345 (2026-03-10): feat: add OAuth [part 1/2]"
+    // Extract hash and date from name for a cleaner header
+    const nameMatch = hit.name.match(/^commit (\w+) \(([^)]+)\): (.+?)(\s*\[part .+])?$/);
+    if (nameMatch) {
+      const [, hash, date, msg] = nameMatch;
+      lines.push(`\n[${pct}% match] ${hash} — ${date}`);
+      lines.push(msg);
+    } else {
+      lines.push(`\n[${pct}% match] ${hit.name}`);
+    }
+
+    const files = hit.tags.filter((t) => !["git", "history", "commits"].includes(t));
+    if (files.length) lines.push(`Files: ${files.join(", ")}`);
+
+    lines.push("───");
+    const content =
+      hit.content.length > 2000
+        ? hit.content.slice(0, 2000) + "\n... [truncated]"
+        : hit.content;
+    lines.push(content);
   }
 
   return lines.join("\n");
