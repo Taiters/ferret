@@ -3,11 +3,10 @@ import { Store } from "./store.js";
 import { readRegistry, localDbPath } from "./projects.js";
 import type { SearchHit, SearchOptions } from "./types.js";
 
-const SIMILARITY_THRESHOLD = 0.3;
-
 export interface HistoryOptions {
   topK?: number;
   file?: string;
+  model?: string;
 }
 
 /**
@@ -15,12 +14,12 @@ export interface HistoryOptions {
  * Excludes git category chunks — use searchHistory for commit queries.
  * Returns formatted text ready for Claude to consume.
  */
-export async function searchMemory(query: string, store: Store, { topK = 6, graph = false }: SearchOptions = {}): Promise<string> {
-  const queryVec = await embed(query);
+export async function searchMemory(query: string, store: Store, { topK = 6, graph = false, model }: SearchOptions = {}): Promise<string> {
+  const queryVec = await embed(query, model);
   // Fetch extra results to account for git chunks being filtered out
-  const results = await store.search(queryVec, topK * 2);
+  const results = await store.search(queryVec, query, topK * 2);
   const hits = results
-    .filter((r) => r.score >= SIMILARITY_THRESHOLD && r.category !== "git")
+    .filter((r) => r.category !== "git")
     .slice(0, topK);
 
   if (hits.length === 0) {
@@ -34,11 +33,11 @@ export async function searchMemory(query: string, store: Store, { topK = 6, grap
  * Search git history for commits related to a query.
  * Optionally filter to commits that touched a specific file path.
  */
-export async function searchHistory(query: string, store: Store, { topK = 6, file }: HistoryOptions = {}): Promise<string> {
-  const queryVec = await embed(query);
-  const results = await store.search(queryVec, topK * 4);
+export async function searchHistory(query: string, store: Store, { topK = 6, file, model }: HistoryOptions = {}): Promise<string> {
+  const queryVec = await embed(query, model);
+  const results = await store.search(queryVec, query, topK * 4);
 
-  let hits = results.filter((r) => r.score >= SIMILARITY_THRESHOLD && r.category === "git");
+  let hits = results.filter((r) => r.category === "git");
 
   if (file) {
     hits = hits.filter((r) => r.tags.some((t) => t.includes(file)));
@@ -58,13 +57,13 @@ export async function searchHistory(query: string, store: Store, { topK = 6, fil
  * Search across all projects in the registry, aggregating and ranking results.
  * Excludes git category chunks.
  */
-export async function searchAllProjects(query: string, { topK = 6, graph = false }: SearchOptions = {}): Promise<string> {
+export async function searchAllProjects(query: string, { topK = 6, graph = false, model }: SearchOptions = {}): Promise<string> {
   const projects = readRegistry();
   if (projects.length === 0) {
     return "No projects indexed yet. Run: memory index <path>";
   }
 
-  const queryVec = await embed(query);
+  const queryVec = await embed(query, model);
 
   type HitWithProject = SearchHit & { projectName: string; projectStore: Store };
   const allHits: HitWithProject[] = [];
@@ -72,9 +71,9 @@ export async function searchAllProjects(query: string, { topK = 6, graph = false
   for (const project of projects) {
     const store = new Store(localDbPath(project.path));
     try {
-      const results = await store.search(queryVec, topK * 2);
+      const results = await store.search(queryVec, query, topK * 2);
       for (const hit of results) {
-        if (hit.score >= SIMILARITY_THRESHOLD && hit.category !== "git") {
+        if (hit.category !== "git") {
           allHits.push({ ...hit, projectName: project.name, projectStore: store });
         }
       }
@@ -97,8 +96,7 @@ export async function searchAllProjects(query: string, { topK = 6, graph = false
   ];
 
   for (const hit of topHits) {
-    const pct = Math.round(hit.score * 100);
-    lines.push(`\n[${pct}% match] [${hit.projectName}] ${hit.category.toUpperCase()} — ${hit.name}`);
+    lines.push(`\n[${hit.projectName}] ${hit.category.toUpperCase()} — ${hit.name}`);
     lines.push(`File: ${hit.file}:${hit.start_line}-${hit.end_line}`);
     lines.push("```");
     const content =
@@ -120,8 +118,7 @@ async function formatHits(query: string, hits: SearchHit[], store: Store, graph:
   ];
 
   for (const hit of hits) {
-    const pct = Math.round(hit.score * 100);
-    lines.push(`\n[${pct}% match] ${hit.category.toUpperCase()} — ${hit.name}`);
+    lines.push(`\n${hit.category.toUpperCase()} — ${hit.name}`);
     lines.push(`File: ${hit.file}:${hit.start_line}-${hit.end_line}`);
 
     if (graph && hit.category === "code") {
@@ -150,16 +147,15 @@ function formatHistoryHits(query: string, hits: SearchHit[]): string {
   ];
 
   for (const hit of hits) {
-    const pct = Math.round(hit.score * 100);
     // Name format: "commit abc12345 (2026-03-10): feat: add OAuth [part 1/2]"
     // Extract hash and date from name for a cleaner header
     const nameMatch = hit.name.match(/^commit (\w+) \(([^)]+)\): (.+?)(\s*\[part .+])?$/);
     if (nameMatch) {
       const [, hash, date, msg] = nameMatch;
-      lines.push(`\n[${pct}% match] ${hash} — ${date}`);
+      lines.push(`\n${hash} — ${date}`);
       lines.push(msg);
     } else {
-      lines.push(`\n[${pct}% match] ${hit.name}`);
+      lines.push(`\n${hit.name}`);
     }
 
     const files = hit.tags.filter((t) => !["git", "history", "commits"].includes(t));

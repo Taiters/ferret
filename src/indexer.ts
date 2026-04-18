@@ -4,7 +4,7 @@ import path from "path";
 import { parseFile, chunkPlainText } from "./ingestion/parser.js";
 import { parseMarkdown } from "./ingestion/markdown.js";
 import { parseGitHistory } from "./ingestion/git.js";
-import { embedBatch } from "./embedder.js";
+import { embedBatch, DEFAULT_MODEL } from "./embedder.js";
 import { Store } from "./store.js";
 import { registerProject } from "./projects.js";
 import type { Chunk, IndexOptions } from "./types.js";
@@ -54,10 +54,11 @@ function progress(label: string, current: number, total: number): void {
 export async function indexProject(
   projectPath: string,
   store: Store,
-  { gitLimit = 100, verbose = false }: IndexOptions = {},
+  { gitLimit = 100, verbose = false, model = DEFAULT_MODEL }: IndexOptions = {},
 ): Promise<void> {
   const absPath = path.resolve(projectPath);
   console.log(`\n📂 Indexing: ${absPath}\n`);
+  if (model !== DEFAULT_MODEL) console.log(`  🤖 Model: ${model}\n`);
 
   await store.ensureIndex();
 
@@ -130,8 +131,12 @@ export async function indexProject(
 
   // ── 3. Embed all chunks ────────────────────────────────────────────────────
   console.log(`\n  🧠 Embedding ${allChunks.length} chunks...`);
-  const texts = allChunks.map((c) => `${c.name}\n${c.content}`);
-  const vectors = await embedBatch(texts, (i, t) => progress("embed", i, t));
+  const texts = allChunks.map((c) => {
+    const relFile = path.relative(absPath, c.file);
+    const tagLine = c.tags.length > 0 ? c.tags.join(" ") + "\n" : "";
+    return `${relFile}\n${c.name}\n${tagLine}${c.content}`;
+  });
+  const vectors = await embedBatch(texts, (i, t) => progress("embed", i, t), model);
 
   // ── 4. Store chunks + vectors ──────────────────────────────────────────────
   console.log("\n  💾 Storing chunks...");
@@ -140,7 +145,11 @@ export async function indexProject(
     await store.upsertChunk({ ...allChunks[i], vector: vectors[i] });
   }
 
-  // ── 5. Build calledBy edges and store graph ────────────────────────────────
+  // ── 5. Build full-text search index ───────────────────────────────────────
+  console.log("\n  🔍 Building full-text search index...");
+  await store.buildFtsIndex();
+
+  // ── 6. Build calledBy edges and store graph ────────────────────────────────
   console.log("\n  🕸  Building call graph...");
   const calledBy = new Map<string, Set<string>>();
 
@@ -162,7 +171,7 @@ export async function indexProject(
   const byCategory: Record<string, number> = {};
   for (const c of allChunks) byCategory[c.category] = (byCategory[c.category] ?? 0) + 1;
 
-  registerProject(absPath);
+  registerProject(absPath, model);
   console.log("\n  ✅ Done!\n");
   console.log("  Indexed:");
   for (const [cat, count] of Object.entries(byCategory)) {

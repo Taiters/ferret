@@ -1,10 +1,12 @@
 import * as lancedb from "@lancedb/lancedb";
+import { Index } from "@lancedb/lancedb";
 import type { Connection, Table } from "@lancedb/lancedb";
 import fs from "fs";
 import type { Chunk, GraphEdges, SearchHit, StoreStats } from "./types.js";
 
 const CHUNKS_TABLE = "chunks";
 const GRAPH_TABLE = "graph";
+const RRF_K = 60;
 
 export class Store {
   private dbPath: string;
@@ -72,27 +74,101 @@ export class Store {
     }
   }
 
-  async search(queryVector: number[], topK = 6): Promise<SearchHit[]> {
+  async buildFtsIndex(): Promise<void> {
+    const table = await this.openChunksTable();
+    if (!table) return;
+    await table.createIndex("content", {
+      config: Index.fts({ withPosition: false }),
+      replace: true,
+    });
+  }
+
+  private async ftsSearch(query: string, topK: number): Promise<Array<{ id: string; rank: number }>> {
+    const table = await this.openChunksTable();
+    if (!table) return [];
+    try {
+      const results = await table
+        .query()
+        .fullTextSearch(query, { columns: "content" })
+        .select(["id"])
+        .limit(topK)
+        .toArray();
+      return results.map((row, i) => ({ id: row.id as string, rank: i + 1 }));
+    } catch {
+      // FTS index may not exist on old indexes — degrade gracefully to vector-only
+      return [];
+    }
+  }
+
+  async search(queryVector: number[], query: string, topK = 6): Promise<SearchHit[]> {
     const table = await this.openChunksTable();
     if (!table) return [];
 
-    const results = await table
-      .vectorSearch(new Float32Array(queryVector))
-      .distanceType("cosine")
-      .limit(topK)
-      .toArray();
+    const fetchK = Math.max(topK * 3, 20);
 
-    return results.map((row) => ({
-      id: row.id as string,
-      file: row.file as string,
-      category: row.category as Chunk["category"],
-      name: row.name as string,
-      content: row.content as string,
-      tags: row.tags ? (row.tags as string).split(",").filter(Boolean) : [],
-      start_line: row.start_line as number,
-      end_line: row.end_line as number,
-      score: 1 - (row._distance as number),
-    }));
+    const [vectorRows, ftsRanks] = await Promise.all([
+      table
+        .vectorSearch(new Float32Array(queryVector))
+        .distanceType("cosine")
+        .limit(fetchK)
+        .toArray(),
+      this.ftsSearch(query, fetchK),
+    ]);
+
+    // Build rank maps
+    const vectorRankMap = new Map<string, number>(
+      vectorRows.map((row, i) => [row.id as string, i + 1]),
+    );
+    const ftsRankMap = new Map<string, number>(
+      ftsRanks.map(({ id, rank }) => [id, rank]),
+    );
+
+    // Score all candidates with RRF
+    const allIds = new Set([...vectorRankMap.keys(), ...ftsRankMap.keys()]);
+    const rrfScores = new Map<string, number>();
+    for (const id of allIds) {
+      let score = 0;
+      const vRank = vectorRankMap.get(id);
+      const fRank = ftsRankMap.get(id);
+      if (vRank !== undefined) score += 1 / (RRF_K + vRank);
+      if (fRank !== undefined) score += 1 / (RRF_K + fRank);
+      rrfScores.set(id, score);
+    }
+
+    // Build row lookup from vector results; fetch any FTS-only rows
+    const rowById = new Map<string, Record<string, unknown>>(
+      vectorRows.map((r) => [r.id as string, r as Record<string, unknown>]),
+    );
+
+    const ftsOnlyIds = [...allIds].filter((id) => !rowById.has(id));
+    if (ftsOnlyIds.length > 0) {
+      const placeholders = ftsOnlyIds.map((id) => `'${id.replace(/'/g, "''")}'`).join(",");
+      const extra = await table.query().where(`id IN (${placeholders})`).toArray();
+      for (const row of extra) rowById.set(row.id as string, row as Record<string, unknown>);
+    }
+
+    // Sort by RRF score and return top-K
+    const sorted = [...rrfScores.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, topK);
+
+    return sorted
+      .map(([id, score]) => {
+        const row = rowById.get(id);
+        if (!row) return null;
+        return {
+          id,
+          file: row.file as string,
+          category: row.category as Chunk["category"],
+          name: row.name as string,
+          content: row.content as string,
+          tags: row.tags ? (row.tags as string).split(",").filter(Boolean) : [],
+          start_line: row.start_line as number,
+          end_line: row.end_line as number,
+          score,
+        } satisfies SearchHit;
+      })
+      .filter((h): h is SearchHit => h !== null);
   }
 
   async setGraphEdges(fnKey: string, { calls = [], calledBy = [] }: GraphEdges): Promise<void> {

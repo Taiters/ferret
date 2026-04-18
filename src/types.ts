@@ -25,11 +25,13 @@ export type CallGraph = Map<string, GraphNode>;
 export interface IndexOptions {
   gitLimit?: number;
   verbose?: boolean;
+  model?: string;
 }
 
 export interface SearchOptions {
   topK?: number;
   graph?: boolean;
+  model?: string;
 }
 
 export interface SearchHit extends Omit<Chunk, "vector"> {
@@ -45,4 +47,5 @@ export interface ProjectMeta {
   path: string;      // absolute path to project root
   name: string;      // basename
   indexedAt: string; // ISO 8601
+  model: string;     // embedding model used to index
 }
