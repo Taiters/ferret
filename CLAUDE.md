@@ -1,0 +1,50 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What This Is
+
+A semantic memory system for Claude Code. It indexes codebases into a local Redis vector store and exposes a `memory` CLI for semantic search and call graph queries. The `SKILL.md` file is copied into other projects' `.claude/skills/` so Claude Code there can query this indexed memory.
+
+## Prerequisites & Setup
+
+- Node.js 18+, Docker
+- Start Redis Stack: `docker compose up -d` (Redis on port 6379, UI at http://localhost:8001)
+- Install CLI: `npm install && npm link`
+
+## CLI Commands
+
+```bash
+memory index <path>                        # Index a codebase (full re-index, clears previous)
+memory index <path> --git-limit 200        # Ingest more git history
+memory index <path> --verbose              # Show skipped files
+memory search "<query>"                    # Semantic search
+memory search "<query>" --graph            # Search + call graph context
+memory search "<query>" -k 10             # More results (default 6)
+memory graph "<function>"                  # Call graph for a function
+memory graph "<function>" --depth 3        # Deeper call traversal
+memory stats                               # Chunk count + breakdown by category
+```
+
+## Architecture
+
+The project uses ES modules (`"type": "module"` in package.json).
+
+**Indexing pipeline** (`indexer.js` orchestrates):
+1. File discovery via glob with ignore lists (node_modules, dist, lock files, files >500KB)
+2. Code parsing (`ingestion/parser.js`): tree-sitter extracts functions/classes for Python/JS/TS; long functions (>150 lines) are windowed with 100-line windows + 20-line overlap; call graph built simultaneously
+3. Markdown parsing (`ingestion/markdown.js`): splits by headings (h1-h4) with same windowing
+4. Git history (`ingestion/git.js`): batches of 10 commits, up to 100 by default
+5. Embedding (`embedder.js`): Xenova/all-MiniLM-L6-v2, 384 dimensions, truncates to 2000 chars, cached at `~/.cache/memory-skill/`
+6. Storage (`store.js`): Redis HNSW index for vectors (`mem:` key prefix), adjacency list for call graph (`graph:` key prefix)
+
+**Search** (`search.js`): KNN vector search with 30% similarity threshold, optional call graph enrichment.
+
+**CLI entry point**: `bin/memory.js` using Commander.js.
+
+## Key Design Decisions
+
+- All embeddings are local (offline, private) — no external API calls for indexing/search
+- Full re-index on every `memory index` run (no incremental updates)
+- Chunk IDs are MD5-based for deduplication
+- `SKILL.md` is the artifact installed into other projects — changes here affect how Claude Code behaves in those projects
