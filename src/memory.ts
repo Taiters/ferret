@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import path from "path";
+import fs from "fs";
 import { Command } from "commander";
 import { indexProject } from "./indexer.js";
 import { searchMemory, searchAllProjects, searchHistory, showGraph } from "./search.js";
@@ -9,6 +10,8 @@ import {
   resolveProjectFromCwd,
   readRegistry,
   readProjectModel,
+  registerProject,
+  readProjectConfig,
 } from "./projects.js";
 import { DEFAULT_MODEL } from "./embedder.js";
 
@@ -56,7 +59,8 @@ program
   .option("--git-limit <n>", "Number of git commits to ingest", "50")
   .option("-v, --verbose", "Show skipped files")
   .option("--model <name>", "Embedding model to use", DEFAULT_MODEL)
-  .action(async (projectPath: string, opts: { gitLimit: string; verbose?: boolean; model: string }) => {
+  .option("--gitignore", "Create .memory-skill/.gitignore to exclude db/ from version control")
+  .action(async (projectPath: string, opts: { gitLimit: string; verbose?: boolean; model: string; gitignore?: boolean }) => {
     const absPath = path.resolve(projectPath);
     const store = new Store(localDbPath(absPath));
     try {
@@ -65,6 +69,11 @@ program
         verbose: opts.verbose,
         model: opts.model,
       });
+      if (opts.gitignore) {
+        const gitignorePath = path.join(absPath, ".memory-skill", ".gitignore");
+        fs.writeFileSync(gitignorePath, "db/\n");
+        console.log("  Created .memory-skill/.gitignore (ignoring db/)");
+      }
     } catch (e) {
       console.error("Indexing failed:", e instanceof Error ? e.message : e);
       process.exit(1);
@@ -81,12 +90,18 @@ program
   .option("-g, --graph", "Include call graph edges in results")
   .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
   .option("-a, --all", "Search across all indexed projects")
-  .action(async (query: string, opts: { topK: string; graph?: boolean; project?: string; all?: boolean }) => {
+  .option("--category <cat>", "Category to include, repeatable (code, docs, text); default: code", (val, prev: string[]) => prev.concat(val), [] as string[])
+  .option("--min-score <n>", "Minimum relevance score 0–1 (default: 0)", "0")
+  .action(async (query: string, opts: { topK: string; graph?: boolean; project?: string; all?: boolean; category: string[]; minScore: string }) => {
+    const minScore = parseFloat(opts.minScore);
+    const categories = opts.category.length > 0 ? opts.category as Array<"code" | "docs" | "text"> : ["code" as const];
     try {
       if (opts.all) {
         const result = await searchAllProjects(query, {
           topK: parseInt(opts.topK),
           graph: opts.graph,
+          categories,
+          minScore,
         });
         console.log(result);
       } else {
@@ -98,6 +113,9 @@ program
             topK: parseInt(opts.topK),
             graph: opts.graph,
             model,
+            categories,
+            minScore,
+            projectRoot,
           });
           console.log(result);
         } finally {
@@ -213,6 +231,29 @@ program
     } catch (e) {
       console.error("Stats failed:", e instanceof Error ? e.message : e);
       process.exit(1);
+    }
+  });
+
+// ── memory register [path] ────────────────────────────────────────────────────
+program
+  .command("register [path]")
+  .description("Register an existing indexed project in the local registry")
+  .action((projectPath?: string) => {
+    const absPath = projectPath ? path.resolve(projectPath) : process.cwd();
+    const dbPath = localDbPath(absPath);
+
+    if (!fs.existsSync(dbPath)) {
+      console.error(`No index found at ${dbPath}`);
+      console.error("Run: memory index <path>");
+      process.exit(1);
+    }
+
+    const config = readProjectConfig(absPath);
+    const model = config?.model ?? DEFAULT_MODEL;
+    registerProject(absPath, model);
+    console.log(`Registered: ${absPath}`);
+    if (!config) {
+      console.log(`  (no index-info.json found — defaulted to model: ${model})`);
     }
   });
 

@@ -7,8 +7,8 @@ You have access to a semantic memory store containing indexed codebase context, 
 Use memory search **before** answering questions about:
 - How a feature works or is implemented
 - Where something is defined or called
-- Recent changes (use git category)
-- Architecture or design decisions (check docs category)
+- Recent changes (use `memory history`)
+- Architecture or design decisions (use `--category docs`)
 - Any question where seeing the actual code would help
 
 ## Commands
@@ -32,6 +32,13 @@ memory search "recent changes to user model"
 memory search "<query>" --graph
 ```
 Use `--graph` when the user asks how code flows, what calls what, or wants to trace execution paths.
+
+### Search specific content categories
+```bash
+memory search "<query>" --category docs
+memory search "<query>" --category code --category docs
+```
+Default is `code` only. Repeat `--category` for multiple categories. Options: `code`, `docs`, `text`. Git history is always separate (use `memory history`).
 
 ### Show call graph for a specific function
 ```bash

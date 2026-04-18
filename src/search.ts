@@ -1,3 +1,4 @@
+import path from "path";
 import { embed } from "./embedder.js";
 import { Store } from "./store.js";
 import { readRegistry, localDbPath } from "./projects.js";
@@ -14,19 +15,21 @@ export interface HistoryOptions {
  * Excludes git category chunks — use searchHistory for commit queries.
  * Returns formatted text ready for Claude to consume.
  */
-export async function searchMemory(query: string, store: Store, { topK = 6, graph = false, model }: SearchOptions = {}): Promise<string> {
+export async function searchMemory(query: string, store: Store, { topK = 6, graph = false, model, categories = ["code"], minScore = 0, projectRoot }: SearchOptions = {}): Promise<string> {
   const queryVec = await embed(query, model);
-  // Fetch extra results to account for git chunks being filtered out
-  const results = await store.search(queryVec, query, topK * 2);
+  // Fetch extra results to account for filtered chunks being excluded
+  const results = await store.search(queryVec, query, topK * 3);
   const hits = results
     .filter((r) => r.category !== "git")
+    .filter((r) => (categories as string[]).includes(r.category))
+    .filter((r) => r.score >= minScore)
     .slice(0, topK);
 
   if (hits.length === 0) {
     return `No relevant memories found for: "${query}"\nTry rephrasing or check if the codebase has been indexed (run: memory index <path>)`;
   }
 
-  return formatHits(query, hits, store, graph);
+  return formatHits(query, hits, store, graph, projectRoot);
 }
 
 /**
@@ -57,7 +60,7 @@ export async function searchHistory(query: string, store: Store, { topK = 6, fil
  * Search across all projects in the registry, aggregating and ranking results.
  * Excludes git category chunks.
  */
-export async function searchAllProjects(query: string, { topK = 6, graph = false, model }: SearchOptions = {}): Promise<string> {
+export async function searchAllProjects(query: string, { topK = 6, graph = false, model, categories = ["code"], minScore = 0 }: SearchOptions = {}): Promise<string> {
   const projects = readRegistry();
   if (projects.length === 0) {
     return "No projects indexed yet. Run: memory index <path>";
@@ -65,7 +68,7 @@ export async function searchAllProjects(query: string, { topK = 6, graph = false
 
   const queryVec = await embed(query, model);
 
-  type HitWithProject = SearchHit & { projectName: string; projectStore: Store };
+  type HitWithProject = SearchHit & { projectName: string; projectPath: string; projectStore: Store };
   const allHits: HitWithProject[] = [];
 
   for (const project of projects) {
@@ -73,9 +76,10 @@ export async function searchAllProjects(query: string, { topK = 6, graph = false
     try {
       const results = await store.search(queryVec, query, topK * 2);
       for (const hit of results) {
-        if (hit.category !== "git") {
-          allHits.push({ ...hit, projectName: project.name, projectStore: store });
-        }
+        if (hit.category === "git") continue;
+        if (!(categories as string[]).includes(hit.category)) continue;
+        if (hit.score < minScore) continue;
+        allHits.push({ ...hit, projectName: project.name, projectPath: project.path, projectStore: store });
       }
     } finally {
       await store.disconnect();
@@ -97,7 +101,8 @@ export async function searchAllProjects(query: string, { topK = 6, graph = false
 
   for (const hit of topHits) {
     lines.push(`\n[${hit.projectName}] ${hit.category.toUpperCase()} — ${hit.name}`);
-    lines.push(`File: ${hit.file}:${hit.start_line}-${hit.end_line}`);
+    const relFile = path.relative(hit.projectPath, hit.file);
+    lines.push(`File: ${relFile}:${hit.start_line}-${hit.end_line}`);
     lines.push("```");
     const content =
       hit.content.length > 1500
@@ -110,7 +115,7 @@ export async function searchAllProjects(query: string, { topK = 6, graph = false
   return lines.join("\n");
 }
 
-async function formatHits(query: string, hits: SearchHit[], store: Store, graph: boolean): Promise<string> {
+async function formatHits(query: string, hits: SearchHit[], store: Store, graph: boolean, projectRoot?: string): Promise<string> {
   const lines: string[] = [
     `MEMORY SEARCH: "${query}"`,
     `Found ${hits.length} relevant chunks${graph ? " (with call graph)" : ""}`,
@@ -119,7 +124,8 @@ async function formatHits(query: string, hits: SearchHit[], store: Store, graph:
 
   for (const hit of hits) {
     lines.push(`\n${hit.category.toUpperCase()} — ${hit.name}`);
-    lines.push(`File: ${hit.file}:${hit.start_line}-${hit.end_line}`);
+    const filePath = projectRoot ? path.relative(projectRoot, hit.file) : hit.file;
+    lines.push(`File: ${filePath}:${hit.start_line}-${hit.end_line}`);
 
     if (graph && hit.category === "code") {
       const edges = await store.getGraphEdges(hit.name);

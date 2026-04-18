@@ -1,7 +1,7 @@
 export interface Chunk {
   id: string;
   file: string;
-  category: "code" | "docs" | "git" | "general";
+  category: "code" | "docs" | "git" | "text";
   name: string;
   content: string;
   tags: string[];
@@ -32,6 +32,9 @@ export interface SearchOptions {
   topK?: number;
   graph?: boolean;
   model?: string;
+  categories?: Array<"code" | "docs" | "text">;
+  minScore?: number;
+  projectRoot?: string;
 }
 
 export interface SearchHit extends Omit<Chunk, "vector"> {

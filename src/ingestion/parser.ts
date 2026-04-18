@@ -224,7 +224,7 @@ export function parseFile(filePath: string, sourceCode: string): ParseResult {
 export function chunkPlainText(
   filePath: string,
   text: string,
-  category: Chunk["category"] = "general",
+  category: Chunk["category"] = "text",
 ): Chunk[] {
   const paragraphs = text.split(/\n{2,}/);
   const chunks: Chunk[] = [];

@@ -6,7 +6,7 @@ import { parseMarkdown } from "./ingestion/markdown.js";
 import { parseGitHistory } from "./ingestion/git.js";
 import { embedBatch, DEFAULT_MODEL } from "./embedder.js";
 import { Store } from "./store.js";
-import { registerProject } from "./projects.js";
+import { registerProject, writeProjectConfig } from "./projects.js";
 import type { Chunk, IndexOptions } from "./types.js";
 
 // ── Ignore patterns ───────────────────────────────────────────────────────────
@@ -22,6 +22,7 @@ const IGNORE_DIRS = [
   "**/.venv/**",
   "**/venv/**",
   "**/*.egg-info/**",
+  "**/.memory-skill/**",
 ];
 
 const IGNORE_FILES = [
@@ -171,6 +172,8 @@ export async function indexProject(
   const byCategory: Record<string, number> = {};
   for (const c of allChunks) byCategory[c.category] = (byCategory[c.category] ?? 0) + 1;
 
+  const indexedAt = new Date().toISOString();
+  writeProjectConfig(absPath, { model, indexedAt });
   registerProject(absPath, model);
   console.log("\n  ✅ Done!\n");
   console.log("  Indexed:");

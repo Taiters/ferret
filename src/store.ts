@@ -52,7 +52,7 @@ export class Store {
     const row = {
       id: chunk.id,
       file: chunk.file ?? "",
-      category: chunk.category ?? "general",
+      category: chunk.category ?? "text",
       name: chunk.name ?? "",
       content: chunk.content ?? "",
       tags: (chunk.tags ?? []).join(","),
@@ -132,7 +132,8 @@ export class Store {
       const fRank = ftsRankMap.get(id);
       if (vRank !== undefined) score += 1 / (RRF_K + vRank);
       if (fRank !== undefined) score += 1 / (RRF_K + fRank);
-      rrfScores.set(id, score);
+      // Normalize to 0–1: divide by max possible score (2/K = both lists at rank 0)
+      rrfScores.set(id, score * RRF_K / 2);
     }
 
     // Build row lookup from vector results; fetch any FTS-only rows
@@ -240,7 +241,7 @@ export class Store {
     const table = await this.openChunksTable();
     if (!table) return {};
 
-    const categories: Chunk["category"][] = ["code", "docs", "git", "general"];
+    const categories: Chunk["category"][] = ["code", "docs", "git", "text"];
     const counts: Record<string, number> = {};
     for (const cat of categories) {
       const n = await table.countRows(`category = '${cat}'`);
