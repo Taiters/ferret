@@ -1,58 +1,60 @@
-import { createClient, SchemaFieldTypes, VectorAlgorithms } from "redis";
+import * as lancedb from "@lancedb/lancedb";
+import type { Connection, Table } from "@lancedb/lancedb";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import type { Chunk, GraphEdges, SearchHit, StoreStats } from "./types.js";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
-const INDEX_NAME = "memory-skill-idx";
-const KEY_PREFIX = "mem:";
-const GRAPH_PREFIX = "graph:";
-const VECTOR_DIM = 384; // all-MiniLM-L6-v2 output dim
+const DB_PATH =
+  process.env.MEMORY_DB_PATH ??
+  path.join(os.homedir(), ".local", "share", "memory-skill", "db");
 
-type RedisClient = ReturnType<typeof createClient>;
-let _client: RedisClient | null = null;
+const CHUNKS_TABLE = "chunks";
+const GRAPH_TABLE = "graph";
 
-export async function getClient(): Promise<RedisClient> {
-  if (_client) return _client;
-  _client = createClient({ url: REDIS_URL });
-  _client.on("error", (e: Error) => console.error("Redis error:", e));
-  await _client.connect();
-  return _client;
+let _db: Connection | null = null;
+let _chunksTable: Table | null = null;
+let _graphTable: Table | null = null;
+
+async function getDb(): Promise<Connection> {
+  if (_db) return _db;
+  fs.mkdirSync(DB_PATH, { recursive: true });
+  _db = await lancedb.connect(DB_PATH);
+  return _db;
 }
 
+// Exported for backwards-compat with any external callers (memory.ts doesn't use it directly)
+export async function getClient(): Promise<Connection> {
+  return getDb();
+}
+
+async function openChunksTable(): Promise<Table | null> {
+  if (_chunksTable) return _chunksTable;
+  const db = await getDb();
+  const names = await db.tableNames();
+  if (!names.includes(CHUNKS_TABLE)) return null;
+  _chunksTable = await db.openTable(CHUNKS_TABLE);
+  return _chunksTable;
+}
+
+async function openGraphTable(): Promise<Table | null> {
+  if (_graphTable) return _graphTable;
+  const db = await getDb();
+  const names = await db.tableNames();
+  if (!names.includes(GRAPH_TABLE)) return null;
+  _graphTable = await db.openTable(GRAPH_TABLE);
+  return _graphTable;
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
 export async function ensureIndex(): Promise<void> {
-  const client = await getClient();
-  try {
-    await client.ft.info(INDEX_NAME);
-  } catch {
-    await client.ft.create(
-      INDEX_NAME,
-      {
-        id: { type: SchemaFieldTypes.TAG },
-        file: { type: SchemaFieldTypes.TAG },
-        category: { type: SchemaFieldTypes.TAG },
-        name: { type: SchemaFieldTypes.TEXT },
-        content: { type: SchemaFieldTypes.TEXT },
-        tags: { type: SchemaFieldTypes.TAG, SEPARATOR: "," },
-        start_line: { type: SchemaFieldTypes.NUMERIC },
-        end_line: { type: SchemaFieldTypes.NUMERIC },
-        vector: {
-          type: SchemaFieldTypes.VECTOR,
-          ALGORITHM: VectorAlgorithms.HNSW,
-          TYPE: "FLOAT32",
-          DIM: VECTOR_DIM,
-          DISTANCE_METRIC: "COSINE",
-        },
-      },
-      { ON: "HASH", PREFIX: KEY_PREFIX },
-    );
-  }
+  await getDb();
 }
 
 export async function upsertChunk(chunk: Chunk & { vector: number[] }): Promise<void> {
-  const client = await getClient();
-  const key = `${KEY_PREFIX}${chunk.id}`;
-  const vectorBuf = Buffer.from(new Float32Array(chunk.vector).buffer);
-
-  await client.hSet(key, {
+  const db = await getDb();
+  const row = {
     id: chunk.id,
     file: chunk.file ?? "",
     category: chunk.category ?? "general",
@@ -61,45 +63,43 @@ export async function upsertChunk(chunk: Chunk & { vector: number[] }): Promise<
     tags: (chunk.tags ?? []).join(","),
     start_line: chunk.start_line ?? 0,
     end_line: chunk.end_line ?? 0,
-    vector: vectorBuf,
-  });
+    vector: Array.from(chunk.vector),
+  };
+
+  if (!_chunksTable) {
+    const names = await db.tableNames();
+    if (names.includes(CHUNKS_TABLE)) {
+      _chunksTable = await db.openTable(CHUNKS_TABLE);
+      await _chunksTable.add([row]);
+    } else {
+      // createTable inserts the first row as part of creation
+      _chunksTable = await db.createTable(CHUNKS_TABLE, [row]);
+    }
+  } else {
+    await _chunksTable.add([row]);
+  }
 }
 
 export async function search(queryVector: number[], topK = 6): Promise<SearchHit[]> {
-  const client = await getClient();
-  const buf = Buffer.from(new Float32Array(queryVector).buffer);
+  const table = await openChunksTable();
+  if (!table) return [];
 
-  const results = await client.ft.search(
-    INDEX_NAME,
-    `*=>[KNN ${topK} @vector $vec AS score]`,
-    {
-      PARAMS: { vec: buf },
-      SORTBY: { BY: "score" },
-      DIALECT: 2,
-      RETURN: [
-        "id",
-        "file",
-        "category",
-        "name",
-        "content",
-        "tags",
-        "start_line",
-        "end_line",
-        "score",
-      ],
-    },
-  );
+  const results = await table
+    .vectorSearch(new Float32Array(queryVector))
+    .distanceType("cosine")
+    .limit(topK)
+    .toArray();
 
-  return results.documents.map((d) => ({
-    id: d.value.id as string,
-    file: d.value.file as string,
-    category: d.value.category as Chunk["category"],
-    name: d.value.name as string,
-    content: d.value.content as string,
-    tags: d.value.tags ? (d.value.tags as string).split(",").filter(Boolean) : [],
-    start_line: parseInt(d.value.start_line as string),
-    end_line: parseInt(d.value.end_line as string),
-    score: 1 - parseFloat(d.value.score as string), // cosine distance → similarity
+  return results.map((row) => ({
+    id: row.id as string,
+    file: row.file as string,
+    category: row.category as Chunk["category"],
+    name: row.name as string,
+    content: row.content as string,
+    tags: row.tags ? (row.tags as string).split(",").filter(Boolean) : [],
+    start_line: row.start_line as number,
+    end_line: row.end_line as number,
+    score: 1 - (row._distance as number),
   }));
 }
 
@@ -109,42 +109,66 @@ export async function setGraphEdges(
   fnKey: string,
   { calls = [], calledBy = [] }: GraphEdges,
 ): Promise<void> {
-  const client = await getClient();
-  const key = `${GRAPH_PREFIX}${fnKey}`;
-  await client.hSet(key, {
+  const db = await getDb();
+  const row = {
+    fn_key: fnKey,
     calls: calls.join("|"),
-    calledBy: calledBy.join("|"),
-  });
+    called_by: calledBy.join("|"),
+  };
+
+  if (!_graphTable) {
+    const names = await db.tableNames();
+    if (names.includes(GRAPH_TABLE)) {
+      _graphTable = await db.openTable(GRAPH_TABLE);
+    } else {
+      _graphTable = await db.createTable(GRAPH_TABLE, [row]);
+      return; // Row already inserted by createTable
+    }
+  }
+
+  await _graphTable
+    .mergeInsert("fn_key")
+    .whenMatchedUpdateAll()
+    .whenNotMatchedInsertAll()
+    .execute([row]);
 }
 
 export async function getGraphEdges(fnKey: string): Promise<GraphEdges> {
-  const client = await getClient();
-  const data = await client.hGetAll(`${GRAPH_PREFIX}${fnKey}`);
-  if (!data || !data.calls) return { calls: [], calledBy: [] };
+  const table = await openGraphTable();
+  if (!table) return { calls: [], calledBy: [] };
+
+  const results = await table
+    .query()
+    .where(`fn_key = '${fnKey.replace(/'/g, "''")}'`)
+    .limit(1)
+    .toArray();
+
+  if (results.length === 0) return { calls: [], calledBy: [] };
+  const row = results[0];
   return {
-    calls: data.calls.split("|").filter(Boolean),
-    calledBy: data.calledBy.split("|").filter(Boolean),
+    calls: row.calls ? (row.calls as string).split("|").filter(Boolean) : [],
+    calledBy: row.called_by ? (row.called_by as string).split("|").filter(Boolean) : [],
   };
 }
 
 // ── Maintenance ───────────────────────────────────────────────────────────────
 
 export async function flushAll(): Promise<void> {
-  const client = await getClient();
-  const keys = await client.keys(`${KEY_PREFIX}*`);
-  const gkeys = await client.keys(`${GRAPH_PREFIX}*`);
-  const all = [...keys, ...gkeys];
-  if (all.length) await client.del(all);
+  const db = await getDb();
+  const names = await db.tableNames();
+  if (names.includes(CHUNKS_TABLE)) await db.dropTable(CHUNKS_TABLE);
+  if (names.includes(GRAPH_TABLE)) await db.dropTable(GRAPH_TABLE);
+  _chunksTable = null;
+  _graphTable = null;
 }
 
 export async function getStats(): Promise<StoreStats> {
-  const client = await getClient();
   try {
-    const info = await client.ft.info(INDEX_NAME);
-    const gkeys = await client.keys(`${GRAPH_PREFIX}*`);
+    const chunksTable = await openChunksTable();
+    const graphTable = await openGraphTable();
     return {
-      total: parseInt(info.numDocs as string),
-      graphNodes: gkeys.length,
+      total: chunksTable ? await chunksTable.countRows() : 0,
+      graphNodes: graphTable ? await graphTable.countRows() : 0,
     };
   } catch {
     return { total: 0, graphNodes: 0 };
@@ -152,19 +176,21 @@ export async function getStats(): Promise<StoreStats> {
 }
 
 export async function getAllByCategory(): Promise<Record<string, number>> {
-  const client = await getClient();
-  const keys = await client.keys(`${KEY_PREFIX}*`);
+  const table = await openChunksTable();
+  if (!table) return {};
+
+  // Use countRows per category to avoid LanceDB's implicit query limit
+  const categories: Chunk["category"][] = ["code", "docs", "git", "general"];
   const counts: Record<string, number> = {};
-  for (const k of keys) {
-    const cat = await client.hGet(k, "category");
-    if (cat) counts[cat] = (counts[cat] ?? 0) + 1;
+  for (const cat of categories) {
+    const n = await table.countRows(`category = '${cat}'`);
+    if (n > 0) counts[cat] = n;
   }
   return counts;
 }
 
 export async function disconnect(): Promise<void> {
-  if (_client) {
-    await _client.quit();
-    _client = null;
-  }
+  _chunksTable = null;
+  _graphTable = null;
+  _db = null;
 }

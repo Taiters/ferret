@@ -45,11 +45,7 @@ program
       });
       console.log(result);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("Search failed:", msg);
-      if (msg.includes("connect")) {
-        console.error("Is Redis running? Try: docker compose up -d");
-      }
+      console.error("Search failed:", e instanceof Error ? e.message : e);
       process.exit(1);
     } finally {
       await disconnect();
@@ -91,11 +87,7 @@ program
       }
       console.log();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("Stats failed:", msg);
-      if (msg.includes("connect")) {
-        console.error("Is Redis running? Try: docker compose up -d");
-      }
+      console.error("Stats failed:", e instanceof Error ? e.message : e);
       process.exit(1);
     } finally {
       await disconnect();

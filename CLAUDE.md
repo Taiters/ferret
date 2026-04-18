@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A semantic memory system for Claude Code. It indexes codebases into a local Redis vector store and exposes a `memory` CLI for semantic search and call graph queries. The `SKILL.md` file is copied into other projects' `.claude/skills/` so Claude Code there can query this indexed memory.
+A semantic memory system for Claude Code. It indexes codebases into a local LanceDB vector store and exposes a `memory` CLI for semantic search and call graph queries. The `SKILL.md` file is copied into other projects' `.claude/skills/` so Claude Code there can query this indexed memory.
 
 ## Prerequisites & Setup
 
-- Node.js 18+, Docker
-- Start Redis Stack: `docker compose up -d` (Redis on port 6379, UI at http://localhost:8001)
+- Node.js 18+
 - Install CLI: `npm install && npm run build && npm link`
+- Data is stored at `~/.local/share/memory-skill/db` (override with `MEMORY_DB_PATH` env var). No external services required.
 
 ## CLI Commands
 
@@ -38,7 +38,7 @@ src/
   indexer.ts            # Indexing pipeline orchestrator
   embedder.ts           # Local embeddings via @huggingface/transformers
   search.ts             # Semantic search + call graph queries
-  store.ts              # Redis Stack interface
+  store.ts              # LanceDB embedded vector store (file-based)
   ingestion/
     parser.ts           # Tree-sitter code parser + call graph builder
     markdown.ts         # Heading-based markdown chunker
@@ -55,7 +55,7 @@ dist/                   # Compiled output (gitignored)
 3. Markdown parsing (`ingestion/markdown.ts`): splits by headings (h1-h4) with same windowing
 4. Git history (`ingestion/git.ts`): batches of 10 commits, up to 100 by default
 5. Embedding (`embedder.ts`): Xenova/all-MiniLM-L6-v2 via @huggingface/transformers, 384 dimensions, truncates to 2000 chars, cached at `~/.cache/memory-skill/`
-6. Storage (`store.ts`): Redis HNSW index for vectors (`mem:` key prefix), adjacency list for call graph (`graph:` key prefix)
+6. Storage (`store.ts`): LanceDB `chunks` table for vectors, `graph` table for call graph adjacency
 
 **Search** (`search.ts`): KNN vector search with 30% similarity threshold, optional call graph enrichment.
 
