@@ -6,7 +6,7 @@ import os from "os";
 env.cacheDir = path.join(os.homedir(), ".cache", "ferret");
 env.allowLocalModels = false;
 
-export const DEFAULT_MODEL = "jinaai/jina-embeddings-v2-base-code";
+export const DEFAULT_MODEL = "Xenova/all-mpnet-base-v2";
 // Some models set model_max_length to a sentinel like 1e30; cap at 32k tokens.
 const MAX_TOKENS_CAP = 32_768;
 const CHARS_PER_TOKEN = 4;
@@ -18,25 +18,38 @@ async function getEmbedder(model = DEFAULT_MODEL): Promise<FeatureExtractionPipe
   if (_embedders.has(model)) return _embedders.get(model)!;
   process.stderr.write(`Loading embedding model ${model}...\n`);
 
-  let lastFile = "";
+  // Track per-file progress so concurrent downloads don't clobber each other
+  const fileOrder: string[] = [];
+  const fileProgress = new Map<string, string>();
+
+  function redrawProgress() {
+    if (fileOrder.length === 0) return;
+    // Move cursor up to overwrite all previously drawn lines
+    if (fileOrder.length > 1) {
+      process.stderr.write(`\x1b[${fileOrder.length - 1}A`);
+    }
+    for (const f of fileOrder) {
+      process.stderr.write(`\r${fileProgress.get(f)!}\x1b[K\n`);
+    }
+  }
+
   const embedder = await pipeline("feature-extraction", model, {
     dtype: "q8",
     progress_callback: (event: any) => {
       if (event.status === "progress" && typeof event.progress === "number") {
-        const file = (event.name as string).split("/").pop() ?? event.name;
+        const file = (event.file as string).split("/").pop() ?? event.name;
         const pct = event.progress.toFixed(1).padStart(5);
         const mb = event.total ? ` (${(event.total / 1_048_576).toFixed(1)} MB)` : "";
-        if (file !== lastFile) {
-          if (lastFile) process.stderr.write("\n");
-          lastFile = file;
+        if (!fileProgress.has(file)) {
+          fileOrder.push(file);
         }
-        process.stderr.write(`\r  ${file}${mb} ${pct}%`);
-      } else if (event.status === "done" && lastFile) {
-        process.stderr.write("\n");
-        lastFile = "";
+        fileProgress.set(file, `  ${file}${mb} ${pct}%`);
+        redrawProgress();
       }
     },
   });
+  // Ensure cursor is on a fresh line after all progress output
+  if (fileOrder.length > 0) process.stderr.write("");
 
   _embedders.set(model, embedder);
   const rawMax: number = (embedder as any).tokenizer?.model_max_length ?? MAX_TOKENS_CAP;

@@ -67,6 +67,9 @@ const SEMANTIC_NODES: Record<string, string[]> = {
     "method_definition",
     "class_declaration",
     "export_statement",
+    "interface_declaration",
+    "type_alias_declaration",
+    "enum_declaration",
   ],
   ".tsx": [
     "function_declaration",
@@ -75,6 +78,9 @@ const SEMANTIC_NODES: Record<string, string[]> = {
     "method_definition",
     "class_declaration",
     "export_statement",
+    "interface_declaration",
+    "type_alias_declaration",
+    "enum_declaration",
   ],
 };
 
@@ -148,6 +154,70 @@ function extractCalls(node: Parser.SyntaxNode, source: string): string[] {
   return [...calls];
 }
 
+// ── Module context extraction ─────────────────────────────────────────────────
+
+// Node types that represent module-level context (imports + top-level declarations)
+// but are NOT already covered by SEMANTIC_NODES.
+const MODULE_CONTEXT_TYPES: Record<string, Set<string>> = {
+  ".py": new Set(["import_statement", "import_from_statement", "expression_statement"]),
+  ".js": new Set(["import_declaration", "lexical_declaration", "variable_declaration"]),
+  ".mjs": new Set(["import_declaration", "lexical_declaration", "variable_declaration"]),
+  ".jsx": new Set(["import_declaration", "lexical_declaration", "variable_declaration"]),
+  ".ts": new Set(["import_declaration", "lexical_declaration", "variable_declaration"]),
+  ".tsx": new Set(["import_declaration", "lexical_declaration", "variable_declaration"]),
+};
+
+/**
+ * Build a single chunk representing the module-level context of a file:
+ * imports, top-level constants/variables, and (for Python) module-level assignments.
+ * Skips node types already indexed as individual semantic chunks.
+ */
+function buildModuleContextChunk(
+  rootNode: Parser.SyntaxNode,
+  allLines: string[],
+  filePath: string,
+  ext: string,
+  semanticTypes: Set<string>,
+): Chunk | null {
+  const contextTypes = MODULE_CONTEXT_TYPES[ext];
+  if (!contextTypes) return null;
+
+  const parts: string[] = [];
+  let minLine = Infinity;
+  let maxLine = -1;
+
+  for (const child of rootNode.children) {
+    if (semanticTypes.has(child.type)) continue; // already indexed individually
+    if (!contextTypes.has(child.type)) continue;
+
+    // For Python expression_statement, only include top-level assignments
+    if (child.type === "expression_statement") {
+      const inner = child.child(0);
+      if (!inner || (inner.type !== "assignment" && inner.type !== "augmented_assignment")) continue;
+    }
+
+    const start = child.startPosition.row;
+    const end = child.endPosition.row;
+    parts.push(allLines.slice(start, end + 1).join("\n"));
+    minLine = Math.min(minLine, start);
+    maxLine = Math.max(maxLine, end);
+  }
+
+  if (parts.length === 0) return null;
+
+  const baseName = path.basename(filePath);
+  return {
+    id: uid(filePath, "module-context", 0),
+    file: filePath,
+    category: "code",
+    name: `${baseName} [module context]`,
+    content: parts.join("\n"),
+    tags: [baseName, ext.replace(".", ""), "module-context"],
+    start_line: minLine + 1,
+    end_line: maxLine + 1,
+  };
+}
+
 // ── Main parser ───────────────────────────────────────────────────────────────
 
 interface ParseResult {
@@ -215,6 +285,16 @@ export function parseFile(filePath: string, sourceCode: string): ParseResult {
   }
 
   visit(tree.rootNode);
+
+  const moduleChunk = buildModuleContextChunk(
+    tree.rootNode,
+    allLines,
+    filePath,
+    ext,
+    new Set(nodeTypes),
+  );
+  if (moduleChunk) chunks.push(moduleChunk);
+
   return { chunks, graph };
 }
 
