@@ -39,6 +39,8 @@ export interface SearchOptions {
 
 export interface SearchHit extends Omit<Chunk, "vector"> {
   score: number;
+  vector?: number[];
+  expandedVia?: string;
 }
 
 export interface StoreStats {
@@ -50,5 +52,4 @@ export interface ProjectMeta {
   path: string;      // absolute path to project root
   name: string;      // basename
   indexedAt: string; // ISO 8601
-  model: string;     // embedding model used to index
 }

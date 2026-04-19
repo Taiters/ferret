@@ -2,12 +2,10 @@ import path from "path";
 import os from "os";
 import fs from "fs";
 import type { ProjectMeta } from "./types.js";
-import { DEFAULT_MODEL } from "./embedder.js";
 
 const REGISTRY_PATH = path.join(os.homedir(), ".local", "share", "ferret", "registry.json");
 
 export interface ProjectConfig {
-  model: string;
   indexedAt: string;
 }
 
@@ -45,7 +43,7 @@ export function readRegistry(): ProjectMeta[] {
   }
 }
 
-export function registerProject(projectRoot: string, model: string): void {
+export function registerProject(projectRoot: string): void {
   const dir = path.dirname(REGISTRY_PATH);
   fs.mkdirSync(dir, { recursive: true });
   const projects = readRegistry().filter((p) => p.path !== projectRoot);
@@ -53,14 +51,8 @@ export function registerProject(projectRoot: string, model: string): void {
     path: projectRoot,
     name: path.basename(projectRoot),
     indexedAt: new Date().toISOString(),
-    model,
   });
   fs.writeFileSync(REGISTRY_PATH, JSON.stringify({ projects }, null, 2));
-}
-
-export function readProjectModel(projectRoot: string): string {
-  const projects = readRegistry();
-  return projects.find((p) => p.path === projectRoot)?.model ?? DEFAULT_MODEL;
 }
 
 // Walk up the directory tree from cwd looking for a .ferret/db directory.

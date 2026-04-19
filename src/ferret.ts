@@ -9,11 +9,9 @@ import {
   localDbPath,
   resolveProjectFromCwd,
   readRegistry,
-  readProjectModel,
   registerProject,
   readProjectConfig,
 } from "./projects.js";
-import { DEFAULT_MODEL } from "./embedder.js";
 
 const program = new Command();
 
@@ -58,16 +56,14 @@ program
   .description("Index a codebase into the memory store")
   .option("--git-limit <n>", "Number of git commits to ingest", "50")
   .option("-v, --verbose", "Show skipped files")
-  .option("--model <name>", "Embedding model to use", DEFAULT_MODEL)
   .option("--gitignore", "Create .ferret/.gitignore to exclude db/ from version control")
-  .action(async (projectPath: string, opts: { gitLimit: string; verbose?: boolean; model: string; gitignore?: boolean }) => {
+  .action(async (projectPath: string, opts: { gitLimit: string; verbose?: boolean; gitignore?: boolean }) => {
     const absPath = path.resolve(projectPath);
     const store = new Store(localDbPath(absPath));
     try {
       await indexProject(absPath, store, {
         gitLimit: parseInt(opts.gitLimit),
         verbose: opts.verbose,
-        model: opts.model,
       });
       if (opts.gitignore) {
         const gitignorePath = path.join(absPath, ".ferret", ".gitignore");
@@ -107,12 +103,10 @@ program
       } else {
         const store = resolveStore(opts.project);
         const projectRoot = resolveProjectRoot(opts.project);
-        const model = readProjectModel(projectRoot);
         try {
           const result = await searchMemory(query, store, {
             topK: parseInt(opts.topK),
             graph: opts.graph,
-            model,
             categories,
             minScore,
             projectRoot,
@@ -139,12 +133,9 @@ program
     let store: Store | undefined;
     try {
       store = resolveStore(opts.project);
-      const projectRoot = resolveProjectRoot(opts.project);
-      const model = readProjectModel(projectRoot);
       const result = await searchHistory(query, store, {
         topK: parseInt(opts.topK),
         file: opts.file,
-        model,
       });
       console.log(result);
     } catch (e) {
@@ -198,7 +189,6 @@ program
             console.log("─".repeat(60));
             console.log(`Total chunks : ${total}`);
             console.log(`Graph nodes  : ${graphNodes}`);
-            console.log(`Model        : ${p.model ?? DEFAULT_MODEL}`);
             for (const [cat, count] of Object.entries(byCategory)) {
               console.log(`  ${cat.padEnd(12)} ${count}`);
             }
@@ -209,8 +199,6 @@ program
         console.log();
       } else {
         const store = resolveStore(opts.project);
-        const projectRoot = resolveProjectRoot(opts.project);
-        const model = readProjectModel(projectRoot);
         try {
           const { total, graphNodes } = await store.getStats();
           const byCategory = await store.getAllByCategory();
@@ -218,7 +206,6 @@ program
           console.log("──────────────────");
           console.log(`Total chunks : ${total}`);
           console.log(`Graph nodes  : ${graphNodes}`);
-          console.log(`Model        : ${model}`);
           console.log("\nBy category:");
           for (const [cat, count] of Object.entries(byCategory)) {
             console.log(`  ${cat.padEnd(12)} ${count}`);
@@ -248,12 +235,10 @@ program
       process.exit(1);
     }
 
-    const config = readProjectConfig(absPath);
-    const model = config?.model ?? DEFAULT_MODEL;
-    registerProject(absPath, model);
+    registerProject(absPath);
     console.log(`Registered: ${absPath}`);
-    if (!config) {
-      console.log(`  (no index-info.json found — defaulted to model: ${model})`);
+    if (!readProjectConfig(absPath)) {
+      console.log(`  (no index-info.json found)`);
     }
   });
 
@@ -272,7 +257,7 @@ program
     for (const p of projects) {
       const age = formatRelativeTime(p.indexedAt);
       console.log(`  ${p.name.padEnd(24)} ${p.path}`);
-      console.log(`  ${"".padEnd(24)} indexed ${age}  model: ${p.model ?? DEFAULT_MODEL}\n`);
+      console.log(`  ${"".padEnd(24)} indexed ${age}\n`);
     }
   });
 

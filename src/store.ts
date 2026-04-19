@@ -83,16 +83,17 @@ export class Store {
     });
   }
 
-  private async ftsSearch(query: string, topK: number): Promise<Array<{ id: string; rank: number }>> {
+  private async ftsSearch(query: string, topK: number, whereClause?: string): Promise<Array<{ id: string; rank: number }>> {
     const table = await this.openChunksTable();
     if (!table) return [];
     try {
-      const results = await table
+      let q = table
         .query()
         .fullTextSearch(query, { columns: "content" })
         .select(["id"])
-        .limit(topK)
-        .toArray();
+        .limit(topK);
+      if (whereClause) q = q.where(whereClause);
+      const results = await q.toArray();
       return results.map((row, i) => ({ id: row.id as string, rank: i + 1 }));
     } catch {
       // FTS index may not exist on old indexes — degrade gracefully to vector-only
@@ -100,19 +101,26 @@ export class Store {
     }
   }
 
-  async search(queryVector: number[], query: string, topK = 6): Promise<SearchHit[]> {
+  async search(queryVector: number[], query: string, topK = 6, categories?: string[]): Promise<SearchHit[]> {
     const table = await this.openChunksTable();
     if (!table) return [];
 
     const fetchK = Math.max(topK * 3, 20);
+    const whereClause =
+      categories && categories.length > 0
+        ? `category IN (${categories.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`
+        : undefined;
 
     const [vectorRows, ftsRanks] = await Promise.all([
-      table
-        .vectorSearch(new Float32Array(queryVector))
-        .distanceType("cosine")
-        .limit(fetchK)
-        .toArray(),
-      this.ftsSearch(query, fetchK),
+      (() => {
+        let q = table
+          .vectorSearch(new Float32Array(queryVector))
+          .distanceType("cosine")
+          .limit(fetchK);
+        if (whereClause) q = q.where(whereClause);
+        return q.toArray();
+      })(),
+      this.ftsSearch(query, fetchK, whereClause),
     ]);
 
     // Build rank maps
@@ -144,7 +152,7 @@ export class Store {
     const ftsOnlyIds = [...allIds].filter((id) => !rowById.has(id));
     if (ftsOnlyIds.length > 0) {
       const placeholders = ftsOnlyIds.map((id) => `'${id.replace(/'/g, "''")}'`).join(",");
-      const extra = await table.query().where(`id IN (${placeholders})`).toArray();
+      const extra = await table.query().where(`id IN (${placeholders})`).select(["id", "file", "category", "name", "content", "tags", "start_line", "end_line", "vector"]).toArray();
       for (const row of extra) rowById.set(row.id as string, row as Record<string, unknown>);
     }
 
@@ -157,6 +165,10 @@ export class Store {
       .map(([id, score]) => {
         const row = rowById.get(id);
         if (!row) return null;
+        const rawVec = row.vector;
+        const vector = rawVec
+          ? Array.from(rawVec as Float32Array | number[])
+          : undefined;
         return {
           id,
           file: row.file as string,
@@ -167,9 +179,10 @@ export class Store {
           start_line: row.start_line as number,
           end_line: row.end_line as number,
           score,
-        } satisfies SearchHit;
+          vector,
+        };
       })
-      .filter((h): h is SearchHit => h !== null);
+      .filter((h): h is NonNullable<typeof h> => h !== null);
   }
 
   async setGraphEdges(fnKey: string, { calls = [], calledBy = [] }: GraphEdges): Promise<void> {
@@ -195,6 +208,34 @@ export class Store {
       .whenMatchedUpdateAll()
       .whenNotMatchedInsertAll()
       .execute([row]);
+  }
+
+  async getChunksByName(names: string[]): Promise<SearchHit[]> {
+    const table = await this.openChunksTable();
+    if (!table || names.length === 0) return [];
+    const capped = names.slice(0, 50);
+    const placeholders = capped.map((n) => `'${n.replace(/'/g, "''")}'`).join(",");
+    const rows = await table.query().where(`name IN (${placeholders})`).toArray();
+    // Deduplicate by name, keeping first occurrence
+    const seen = new Set<string>();
+    return rows
+      .filter((row) => {
+        const n = row.name as string;
+        if (seen.has(n)) return false;
+        seen.add(n);
+        return true;
+      })
+      .map((row) => ({
+        id: row.id as string,
+        file: row.file as string,
+        category: row.category as Chunk["category"],
+        name: row.name as string,
+        content: row.content as string,
+        tags: row.tags ? (row.tags as string).split(",").filter(Boolean) : [],
+        start_line: row.start_line as number,
+        end_line: row.end_line as number,
+        score: 0,
+      }));
   }
 
   async getGraphEdges(fnKey: string): Promise<GraphEdges> {

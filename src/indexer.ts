@@ -59,7 +59,6 @@ export async function indexProject(
 ): Promise<void> {
   const absPath = path.resolve(projectPath);
   console.log(`\n📂 Indexing: ${absPath}\n`);
-  if (model !== DEFAULT_MODEL) console.log(`  🤖 Model: ${model}\n`);
 
   await store.ensureIndex();
 
@@ -173,8 +172,8 @@ export async function indexProject(
   for (const c of allChunks) byCategory[c.category] = (byCategory[c.category] ?? 0) + 1;
 
   const indexedAt = new Date().toISOString();
-  writeProjectConfig(absPath, { model, indexedAt });
-  registerProject(absPath, model);
+  writeProjectConfig(absPath, { indexedAt });
+  registerProject(absPath);
   console.log("\n  ✅ Done!\n");
   console.log("  Indexed:");
   for (const [cat, count] of Object.entries(byCategory)) {
