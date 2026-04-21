@@ -4,6 +4,7 @@ import path from "path";
 import { parseFile, chunkPlainText } from "./ingestion/parser.js";
 import { parseMarkdown } from "./ingestion/markdown.js";
 import { parseGitHistory } from "./ingestion/git.js";
+import { registry } from "./ingestion/registry.js";
 import { embedBatch, DEFAULT_MODEL } from "./embedder.js";
 import { Store } from "./store.js";
 import { registerProject, writeProjectConfig } from "./projects.js";
@@ -39,7 +40,7 @@ const IGNORE_FILES = [
   "**/*.pyo",
 ];
 
-const CODE_EXTS = new Set([".py", ".js", ".mjs", ".jsx", ".ts", ".tsx"]);
+const CODE_EXTS = new Set(registry.registeredExtensions());
 const MD_EXTS = new Set([".md", ".mdx", ".rst", ".txt"]);
 const MAX_FILE_BYTES = 500_000;
 
@@ -133,8 +134,7 @@ export async function indexProject(
   console.log(`\n  🧠 Embedding ${allChunks.length} chunks...`);
   const texts = allChunks.map((c) => {
     const relFile = path.relative(absPath, c.file);
-    const tagLine = c.tags.length > 0 ? c.tags.join(" ") + "\n" : "";
-    return `${relFile}\n${c.name}\n${tagLine}${c.content}`;
+    return registry.formatForEmbedding(c, relFile);
   });
   const vectors = await embedBatch(texts, (i, t) => progress("embed", i, t), model);
 

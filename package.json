@@ -6,6 +6,10 @@
   "bin": {
     "ferret": "./dist/ferret.js"
   },
+  "exports": {
+    ".": "./dist/ferret.js",
+    "./ingestion": "./dist/ingestion/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
