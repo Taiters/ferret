@@ -1,117 +1,77 @@
-# Ferret
+---
+name: ferret
+description: Use when you need to find code, understand how something is implemented, trace call flow, or look up a specific function/class in an indexed codebase. Use before answering questions about how features work, where things are defined, or how code connects.
+---
 
-You have access to a semantic search tool containing indexed codebase context, documentation, and git history. Use it proactively whenever you need to understand code structure, find relevant implementations, or trace code flow.
+# Ferret — Semantic Codebase Search
+
+You have access to `ferret`, a semantic search tool over indexed codebases. Use it proactively rather than guessing from memory or grepping blindly.
 
 ## When to use ferret
 
-Use ferret search **before** answering questions about:
-- How a feature works or is implemented
-- Where something is defined or called
-- Recent changes (use `ferret history`)
-- Architecture or design decisions (use `--category docs`)
-- Any question where seeing the actual code would help
+- Understanding how a feature is implemented
+- Finding where a function, class, or type is defined
+- Tracing what calls what (call graph)
+- Answering "where does X happen?" questions
+- Any question where seeing real code would help
 
 ## Commands
 
-### Search for relevant context
+### Semantic search
 ```bash
 ferret search "<natural language query>"
+ferret search "<query>" -k 10             # More results (default: 6)
+ferret search "<query>" --min-score 0.5    # Filter low-relevance results (0–1)
+ferret search "<query>" -p /path/to/proj  # Explicit project (overrides CWD)
 ```
-Search automatically scopes to the current project (detected from your working directory).
 
-Examples:
+Write queries as natural language, not keywords:
 ```bash
-ferret search "authentication middleware"
-ferret search "how does payment processing work"
-ferret search "database connection setup"
-ferret search "recent changes to user model"
+ferret search "how does authentication middleware work"
+ferret search "database connection pooling"
+ferret search "error handling in the payment flow"
 ```
 
-### Search with call graph (for understanding code flow)
+### Look up a specific symbol
 ```bash
-ferret search "<query>" --graph
+ferret symbol src/auth/login.ts:validateToken
+ferret symbol -p /path/to/proj src/auth/login.ts:validateToken
 ```
-Use `--graph` when the user asks how code flows, what calls what, or wants to trace execution paths.
+Use when you know the exact file and symbol name. Format: `<file>:<SymbolName>` or `<file>:<Class>.<method>`.
 
-### Search specific content categories
+### Call graph around a symbol
 ```bash
-ferret search "<query>" --category docs
-ferret search "<query>" --category code --category docs
+ferret graph src/auth/login.ts:validateToken
+ferret graph src/auth/login.ts:validateToken --depth 3   # Deeper (default: 2)
 ```
-Default is `code` only. Repeat `--category` for multiple categories. Options: `code`, `docs`, `text`. Git history is always separate (use `ferret history`).
+Use when the user asks how code flows, what calls what, or wants to trace execution paths.
 
-### Show call graph for a specific function
+### Discovery
 ```bash
-ferret graph "<function_name>"
-ferret graph "<function_name>" --depth 3
+ferret projects    # List all indexed projects
+ferret stats       # Chunk count + graph node count for current project
 ```
-Use when the user mentions a specific function and wants to understand its relationships.
 
-### Search across all indexed projects
+## Using results
+
+Results include file paths and line ranges. When referencing them:
+- Cite location: `src/auth/login.ts:12-45`
+- Prefer results with score ≥ 0.5 — below that, treat with caution
+- Graph output shows `calls:` and `called by:` edges — use these to explain flow
+
+## Example workflows
+
+**"How does the auth system work?"**
+1. `ferret search "authentication flow"`
+2. Read chunks, follow up with `ferret graph` on key functions if flow is unclear
+
+**"What does validateToken do and what calls it?"**
+1. `ferret symbol src/auth/login.ts:validateToken`
+2. `ferret graph src/auth/login.ts:validateToken`
+
+**No results or wrong project?**
 ```bash
-ferret search "<query>" --all
+ferret projects                            # Check what's indexed
+ferret search "<query>" -p /correct/path   # Force the right project
 ```
-Use `--all` when exploring across multiple repos or looking for a pattern that might exist in any indexed project. Results are ranked by relevance and labelled with the project name.
-
-### Search a specific project explicitly
-```bash
-ferret search "<query>" --project /path/to/project
-```
-Use when auto-detection fails or you want to search a project other than the current one.
-
-### List all indexed projects
-```bash
-ferret projects
-```
-Use to discover what projects are available before doing a cross-project search.
-
-### Check what's indexed
-```bash
-ferret stats
-ferret stats --all
-```
-
-### Index or re-index a codebase
-```bash
-ferret index <path>
-ferret index /path/to/project
-```
-Each project is stored independently — indexing one project does not affect others. Run this when the user asks to index a project, or when search returns no results and a codebase should be available.
-
-## How to use results
-
-Results are returned as ranked chunks with file paths and line numbers. When referencing them:
-- Cite the file and line range: `src/auth/login.py:12-45`
-- Use the match percentage to gauge relevance — prefer 70%+ matches
-- The `--graph` output shows `calls:` and `called by:` edges — use these to explain flow
-
-## Example workflow
-
-User: "How does the auth system work?"
-
-1. Run: `ferret search "authentication flow" --graph`
-2. Read the returned chunks and graph edges
-3. Answer based on the actual code, citing file locations
-4. If you need more detail on a specific function: `ferret graph "validateToken"`
-
-User: "Do any of our other repos handle auth differently?"
-
-1. Run: `ferret projects` to see what's indexed
-2. Run: `ferret search "authentication" --all` to compare across projects
-
-## Troubleshooting
-
-If `ferret` command is not found:
-```bash
-cd ~/repos/Taiters/memory-skill && npm install && npm run build && npm link
-```
-
-If no results are returned, the codebase may not be indexed:
-```bash
-ferret index /path/to/project
-```
-
-If search returns results from the wrong project, you may be outside the project directory tree. Use `--project` to be explicit:
-```bash
-ferret search "<query>" --project /path/to/correct/project
-```
+If nothing is indexed, ask the user to run `ferret index <path>` — indexing is their responsibility.
