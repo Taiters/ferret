@@ -1,7 +1,7 @@
 {
   "name": "ferret",
   "description": "Semantic codebase search for Claude Code — index once, query every conversation",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Dan Tait",
     "email": "dantait91@gmail.com",
