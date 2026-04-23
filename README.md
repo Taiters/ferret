@@ -4,8 +4,6 @@ Semantic codebase search for Claude Code. Index your codebase once, query it dur
 
 **What it does:**
 - Parses Python, JS, TS by function/class (long methods windowed with overlap)
-- Splits markdown/README by heading sections
-- Ingests git history in batches
 - Builds a call graph so Claude understands code flow
 - Embeds everything locally (free, offline, ~25MB model)
 - Stores vectors in LanceDB for fast semantic search
@@ -20,26 +18,27 @@ Semantic codebase search for Claude Code. Index your codebase once, query it dur
 
 ## Setup
 
-### 1. Install & link the CLI
+### 1. Install the CLI
 
 ```bash
-cd ~/repos/Taiters/memory-skill
-npm install
-npm run build
-npm link
+npm install -g @taiters/ferret
 ```
 
 This makes `ferret` available globally in your terminal.
 
 ### 2. Enable the plugin
 
-Load the plugin for a session:
+Install the plugin via the Claude Code plugin manager:
 
 ```bash
-claude --plugin-dir ~/repos/Taiters/memory-skill
+claude plugin add @taiters/ferret
 ```
 
-Or install it permanently via the Claude Code plugin manager.
+Or load it for a single session:
+
+```bash
+claude --plugin-dir $(npm root -g)/@taiters/ferret
+```
 
 ---
 
@@ -55,7 +54,6 @@ Takes 1-5 minutes depending on codebase size. The embedding model downloads once
 
 Options:
 ```bash
-ferret index . --git-limit 200   # ingest more git history
 ferret index . --verbose         # show skipped files
 ```
 
@@ -102,12 +100,11 @@ Claude grounds answers in your actual code without you needing to paste anything
 ## Architecture
 
 ```
-~/repos/Taiters/memory-skill/       ← the plugin directory
+@taiters/ferret/
 ├── .claude-plugin/plugin.json       ← plugin manifest
 ├── skills/
 │   ├── search/SKILL.md              ← ferret:search skill
 │   └── graph/SKILL.md               ← ferret:graph skill
-├── bin/ferret                        ← wrapper added to PATH when plugin is active
 └── src/
     ├── ferret.ts                     ← CLI entry point
     ├── indexer/                      ← orchestrates indexing
@@ -119,6 +116,7 @@ Claude grounds answers in your actual code without you needing to paste anything
 LanceDB (local, file-based):
   - Vectors stored in chunks table with HNSW index
   - Call graph stored in graph table as adjacency list
+  - DB stored at <project>/.ferret/db
 ```
 
 ---
@@ -138,7 +136,7 @@ Takes the same time as initial indexing. Recommended after large refactors or wh
 ## Troubleshooting
 
 **`ferret: command not found`**
-Make sure the plugin is enabled — either via `claude --plugin-dir` or the plugin manager. The plugin's `bin/ferret` wrapper is what puts `ferret` on PATH.
+Run `npm install -g @taiters/ferret` and make sure your npm global bin directory is on your `PATH`.
 
 **`No results found`**
 - Check `ferret stats` — if total is 0, index first
