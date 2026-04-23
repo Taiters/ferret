@@ -44,7 +44,7 @@
   ],
   "type": "module",
   "bin": {
-    "ferret": "./dist/ferret.js"
+    "ferret": "dist/ferret.js"
   },
   "exports": {
     ".": "./dist/ferret.js"
