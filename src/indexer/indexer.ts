@@ -79,7 +79,7 @@ export class Indexer {
     // Normalize graph file paths to relative before writing
     const relGraph: CallGraph = new Map();
     for (const [name, { calls, file }] of graph) {
-      relGraph.set(name, { calls, file: path.relative(absPath, file) });
+      relGraph.set(name, { calls, file: path.isAbsolute(file) ? path.relative(absPath, file) : file });
     }
 
     console.log("\n  💾 Storing chunks...");

@@ -22,9 +22,19 @@ describe("Indexer", () => {
   beforeEach(() => vi.clearAllMocks());
 
   test("flushes the store before indexing", async () => {
+    const callOrder: string[] = [];
+    (mockStore.flush as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      callOrder.push("flush");
+      return Promise.resolve();
+    });
+    (mockStore.write as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      callOrder.push("write");
+      return Promise.resolve();
+    });
     const { Indexer } = await import("../../src/indexer/indexer.js");
     const indexer = new Indexer(mockEmbedder, mockStore, {} as ParserRegistry);
     await indexer.index("/tmp").catch(() => {});
     expect(mockStore.flush).toHaveBeenCalled();
+    expect(callOrder[0]).toBe("flush");
   });
 });
