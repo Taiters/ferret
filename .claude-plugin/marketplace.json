@@ -1,0 +1,29 @@
+{
+  "name": "taiters-plugins",
+  "owner": {
+    "name": "Dan Tait",
+    "email": "dantait91@gmail.com"
+  },
+  "metadata": {
+    "description": "Plugins by Dan Tait for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "ferret",
+      "source": {
+        "source": "github",
+        "repo": "Taiters/ferret"
+      },
+      "description": "Semantic codebase search for Claude Code — index once, query every conversation",
+      "author": {
+        "name": "Dan Tait",
+        "email": "dantait91@gmail.com"
+      },
+      "homepage": "https://github.com/Taiters/ferret",
+      "repository": "https://github.com/Taiters/ferret",
+      "license": "MIT",
+      "keywords": ["search", "semantic", "codebase", "vector", "embeddings"],
+      "category": "developer-tools"
+    }
+  ]
+}
