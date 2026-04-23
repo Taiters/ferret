@@ -1,5 +1,4 @@
 import path from "path";
-import type { Chunk } from "../types.js";
 import type { LanguageParser, ParseResult } from "./parserTypes.js";
 
 export class ParserRegistry {
@@ -25,15 +24,5 @@ export class ParserRegistry {
     const parser = this.get(ext);
     if (!parser) return { chunks: [], graph: new Map() };
     return parser.parse(filePath, source);
-  }
-
-  formatForEmbedding(chunk: Chunk, relFile: string): string {
-    const ext = path.extname(chunk.file).toLowerCase();
-    const parser = this.get(ext);
-    if (parser?.formatForEmbedding) {
-      return parser.formatForEmbedding(chunk, relFile);
-    }
-    const tagLine = chunk.tags.length > 0 ? chunk.tags.join(" ") + "\n" : "";
-    return `${relFile}\n${chunk.name}\n${tagLine}${chunk.content}`;
   }
 }

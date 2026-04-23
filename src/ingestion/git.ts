@@ -1,6 +1,6 @@
 import { simpleGit } from "simple-git";
 import crypto from "crypto";
-import type { Chunk } from "../types.js";
+import type { ParsedChunk } from "./parserTypes.js";
 
 const CHUNK_LINE_LIMIT = 150;
 const WINDOW_SIZE = 100;
@@ -51,19 +51,17 @@ function makeChunk(
   lines: string[],
   part: number,
   totalParts: number,
-): Chunk {
+): ParsedChunk {
   const shortMsg = message.length > 72 ? message.slice(0, 69) + "..." : message;
   const nameSuffix = totalParts > 1 ? ` [part ${part + 1}/${totalParts}]` : "";
   const startLine = part * (WINDOW_SIZE - WINDOW_OVERLAP) + 1;
   return {
     id: uid(repoPath, hash, part),
     file: `${repoPath}/.git/log`,
-    category: "git",
     name: `commit ${hash.slice(0, 8)} (${date}): ${shortMsg}${nameSuffix}`,
     content: lines.join("\n"),
-    tags: ["git", "history", "commits", ...changedFiles],
-    start_line: startLine,
-    end_line: startLine + lines.length - 1,
+    startLine,
+    endLine: startLine + lines.length - 1,
   };
 }
 
@@ -71,7 +69,7 @@ function makeChunk(
  * Ingest the last `limit` git commits from `repoPath`.
  * Returns one chunk per commit (or multiple for large diffs, using sliding windows).
  */
-export async function parseGitHistory(repoPath: string, limit = 50): Promise<Chunk[]> {
+export async function parseGitHistory(repoPath: string, limit = 50): Promise<ParsedChunk[]> {
   const git = simpleGit(repoPath);
 
   let log;
@@ -83,7 +81,7 @@ export async function parseGitHistory(repoPath: string, limit = 50): Promise<Chu
     return [];
   }
 
-  const chunks: Chunk[] = [];
+  const chunks: ParsedChunk[] = [];
 
   for (const commit of log.all) {
     const { hash, date, author_name: author, message } = commit;

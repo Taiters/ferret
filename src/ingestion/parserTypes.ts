@@ -1,7 +1,20 @@
-import type { Chunk, CallGraph } from "../types.js";
+import type { CallGraph, Chunk } from "../types.js";
+
+/**
+ * What parsers emit: absolute file path, no symbolId.
+ * The Indexer converts ParsedChunk → Chunk (relative path + symbolId).
+ */
+export interface ParsedChunk {
+  id: string;
+  file: string;    // absolute path
+  name: string;
+  content: string;
+  startLine: number;
+  endLine: number;
+}
 
 export interface ParseResult {
-  chunks: Chunk[];
+  chunks: ParsedChunk[];
   graph: CallGraph;
 }
 
@@ -11,9 +24,8 @@ export interface LanguageParser {
   parse(filePath: string, source: string): ParseResult;
 
   /**
-   * Format a chunk into the string passed to the embedder.
-   * Optional — if absent the registry uses the default format.
-   * Override to add language-specific context to the embedding text.
+   * Format a chunk for embedding. chunk.file is already relative to project root.
+   * Optional — if absent the indexer uses a default format.
    */
-  formatForEmbedding?(chunk: Chunk, relFile: string): string;
+  formatForEmbedding?(chunk: Chunk): string;
 }

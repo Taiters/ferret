@@ -183,7 +183,7 @@ program
         for (const p of projects) {
           const store = new Store(localDbPath(p.path));
           try {
-            const { total, graphNodes } = await store.getStats();
+            const { chunks: total, graphNodes } = await store.getStats();
             const byCategory = await store.getAllByCategory();
             console.log(`\n${p.name} (${p.path})`);
             console.log("─".repeat(60));
@@ -200,7 +200,7 @@ program
       } else {
         const store = resolveStore(opts.project);
         try {
-          const { total, graphNodes } = await store.getStats();
+          const { chunks: total, graphNodes } = await store.getStats();
           const byCategory = await store.getAllByCategory();
           console.log("\nFerret Stats");
           console.log("──────────────────");

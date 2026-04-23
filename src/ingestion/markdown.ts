@@ -1,6 +1,6 @@
 import path from "path";
 import crypto from "crypto";
-import type { Chunk } from "../types.js";
+import type { ParsedChunk } from "./parserTypes.js";
 
 const MAX_SECTION_LINES = 150;
 const WINDOW_SIZE = 100;
@@ -14,9 +14,9 @@ function uid(file: string, heading: string, idx: number): string {
  * Parse a markdown file into heading-based sections.
  * Long sections are windowed just like code.
  */
-export function parseMarkdown(filePath: string, source: string): Chunk[] {
+export function parseMarkdown(filePath: string, source: string): ParsedChunk[] {
   const lines = source.split("\n");
-  const chunks: Chunk[] = [];
+  const chunks: ParsedChunk[] = [];
   const heading = /^#{1,4}\s+(.+)/;
 
   let currentHeading = path.basename(filePath, ".md");
@@ -33,12 +33,10 @@ export function parseMarkdown(filePath: string, source: string): Chunk[] {
       chunks.push({
         id: uid(filePath, currentHeading, sectionIdx++),
         file: filePath,
-        category: "docs",
         name: currentHeading,
         content,
-        tags: [currentHeading, path.basename(filePath), "docs"],
-        start_line: bufferStart,
-        end_line: bufferStart + lineCount - 1,
+        startLine: bufferStart,
+        endLine: bufferStart + lineCount - 1,
       });
     } else {
       // Window long sections
@@ -49,12 +47,10 @@ export function parseMarkdown(filePath: string, source: string): Chunk[] {
         chunks.push({
           id: uid(filePath, currentHeading, sectionIdx++),
           file: filePath,
-          category: "docs",
           name: `${currentHeading} [part ${Math.floor(offset / (WINDOW_SIZE - WINDOW_OVERLAP)) + 1}]`,
           content: win.join("\n").trim(),
-          tags: [currentHeading, path.basename(filePath), "docs"],
-          start_line: absStart,
-          end_line: absStart + win.length - 1,
+          startLine: absStart,
+          endLine: absStart + win.length - 1,
         });
         if (offset + WINDOW_SIZE >= buffer.length) break;
         offset += WINDOW_SIZE - WINDOW_OVERLAP;

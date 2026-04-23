@@ -1,25 +1,22 @@
 import crypto from "crypto";
 import path from "path";
-import type { Chunk } from "../types.js";
+import type { ParsedChunk } from "./parserTypes.js";
 
-export const CHUNK_LINE_LIMIT = 150; // functions over this get windowed
-export const WINDOW_SIZE = 100; // lines per window
-export const WINDOW_OVERLAP = 20; // overlap between windows
+export const CHUNK_LINE_LIMIT = 150;
+export const WINDOW_SIZE = 100;
+export const WINDOW_OVERLAP = 20;
 
 export function uid(file: string, name: string, start: number): string {
   return crypto.createHash("md5").update(`${file}:${name}:${start}`).digest("hex").slice(0, 12);
 }
 
-/**
- * Window a long function body into overlapping chunks.
- */
 export function windowChunk(
   file: string,
   name: string,
   lines: string[],
   startLine: number,
-): Chunk[] {
-  const chunks: Chunk[] = [];
+): ParsedChunk[] {
+  const chunks: ParsedChunk[] = [];
   let offset = 0;
   while (offset < lines.length) {
     const windowLines = lines.slice(offset, offset + WINDOW_SIZE);
@@ -28,12 +25,10 @@ export function windowChunk(
     chunks.push({
       id: uid(file, name, absStart),
       file,
-      category: "code",
       name: `${name} [lines ${absStart}-${absEnd}]`,
       content: windowLines.join("\n"),
-      tags: [name, path.basename(file), "windowed"],
-      start_line: absStart,
-      end_line: absEnd,
+      startLine: absStart,
+      endLine: absEnd,
     });
     if (offset + WINDOW_SIZE >= lines.length) break;
     offset += WINDOW_SIZE - WINDOW_OVERLAP;
@@ -41,16 +36,9 @@ export function windowChunk(
   return chunks;
 }
 
-/**
- * Fallback: plain text chunker for files that can't be parsed semantically.
- */
-export function chunkPlainText(
-  filePath: string,
-  text: string,
-  category: Chunk["category"] = "text",
-): Chunk[] {
+export function chunkPlainText(filePath: string, text: string): ParsedChunk[] {
   const paragraphs = text.split(/\n{2,}/);
-  const chunks: Chunk[] = [];
+  const chunks: ParsedChunk[] = [];
   let buffer = "";
   let bufStart = 1;
   let lineCount = 1;
@@ -61,12 +49,10 @@ export function chunkPlainText(
       chunks.push({
         id: uid(filePath, "para", bufStart),
         file: filePath,
-        category,
         name: path.basename(filePath),
         content: buffer.trim(),
-        tags: [path.basename(filePath), category],
-        start_line: bufStart,
-        end_line: lineCount,
+        startLine: bufStart,
+        endLine: lineCount,
       });
       buffer = para;
       bufStart = lineCount;
@@ -80,12 +66,10 @@ export function chunkPlainText(
     chunks.push({
       id: uid(filePath, "para", bufStart),
       file: filePath,
-      category,
       name: path.basename(filePath),
       content: buffer.trim(),
-      tags: [path.basename(filePath), category],
-      start_line: bufStart,
-      end_line: lineCount,
+      startLine: bufStart,
+      endLine: lineCount,
     });
   }
 

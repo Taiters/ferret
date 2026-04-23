@@ -1,50 +1,31 @@
 export interface Chunk {
   id: string;
-  file: string;
-  category: "code" | "docs" | "git" | "text";
+  symbolId: string;   // e.g. "src/search.ts:Searcher.search"
+  file: string;       // relative to project root
   name: string;
   content: string;
-  tags: string[];
-  start_line: number;
-  end_line: number;
-  vector?: number[];
+  startLine: number;
+  endLine: number;
+}
+
+export interface EmbeddedChunk extends Chunk {
+  vector: number[];
+}
+
+export interface SearchHit extends Chunk {
+  score: number;
 }
 
 export interface GraphEdges {
-  calls: string[];
-  calledBy: string[];
+  calls: string[];    // symbolIds of callees
+  calledBy: string[]; // symbolIds of callers
 }
 
-export interface GraphNode {
-  calls: string[];
-  file: string;
-}
-
-export type CallGraph = Map<string, GraphNode>;
-
-export interface IndexOptions {
-  gitLimit?: number;
-  verbose?: boolean;
-  model?: string;
-}
-
-export interface SearchOptions {
-  topK?: number;
-  graph?: boolean;
-  model?: string;
-  categories?: Array<"code" | "docs" | "text">;
-  minScore?: number;
-  projectRoot?: string;
-}
-
-export interface SearchHit extends Omit<Chunk, "vector"> {
-  score: number;
-  vector?: number[];
-  expandedVia?: string;
-}
+// Used by ingestion, indexer, and store
+export type CallGraph = Map<string, { calls: string[]; file: string }>;
 
 export interface StoreStats {
-  total: number;
+  chunks: number;
   graphNodes: number;
 }
 
