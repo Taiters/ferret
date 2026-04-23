@@ -248,6 +248,30 @@ export class LanceDbStore implements ChunkStore {
     };
   }
 
+  async sampleChunks(n: number): Promise<Chunk[]> {
+    const table = await this.openChunksTable();
+    if (!table) return [];
+    const rows = await table
+      .query()
+      .select(["id", "symbol_id", "file", "name", "content", "start_line", "end_line"])
+      .limit(1_000_000)  // LanceDB plain queries default to 10 rows without an explicit limit
+      .toArray();
+    // Full Fisher-Yates shuffle so the sample is unbiased w.r.t. insertion order.
+    for (let i = rows.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rows[i], rows[j]] = [rows[j], rows[i]];
+    }
+    return rows.slice(0, n).map((row) => ({
+      id: row.id as string,
+      symbolId: row.symbol_id as string,
+      file: row.file as string,
+      name: row.name as string,
+      content: row.content as string,
+      startLine: row.start_line as number,
+      endLine: row.end_line as number,
+    }));
+  }
+
   async getStats(): Promise<StoreStats> {
     try {
       const chunksTable = await this.openChunksTable();

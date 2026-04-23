@@ -14,5 +14,7 @@ export interface ChunkStore {
   /** Build the full-text search index. Call after write(). */
   buildFtsIndex(): Promise<void>;
   getStats(): Promise<StoreStats>;
+  /** Return a random sample of up to `n` chunks (used for benchmark generation). */
+  sampleChunks(n: number): Promise<Chunk[]>;
   disconnect(): Promise<void>;
 }

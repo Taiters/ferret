@@ -22,15 +22,19 @@ export class HuggingFaceEmbedder implements Embedder {
 
   private async getPipeline(): Promise<FeatureExtractionPipeline> {
     if (this._pipeline) return this._pipeline;
-    process.stderr.write(`Loading embedding model ${this.modelName}...\n`);
+    process.stderr.write(`\nLoading embedding model ${this.modelName}...\n`);
 
     const fileOrder: string[] = [];
     const fileProgress = new Map<string, string>();
+    let linesDrawn = 0;
 
     function redrawProgress() {
       if (fileOrder.length === 0) return;
-      if (fileOrder.length > 1) process.stderr.write(`\x1b[${fileOrder.length - 1}A`);
-      for (const f of fileOrder) process.stderr.write(`\r${fileProgress.get(f)!}\x1b[K\n`);
+      if (linesDrawn > 0) process.stderr.write(`\x1b[${linesDrawn}A`);
+      for (const f of fileOrder) {
+        process.stderr.write(`\r\x1b[2m  ${fileProgress.get(f)!}\x1b[0m\x1b[K\n`);
+      }
+      linesDrawn = fileOrder.length;
     }
 
     const embedder = await pipeline("feature-extraction", this.modelName, {
@@ -41,7 +45,7 @@ export class HuggingFaceEmbedder implements Embedder {
           const pct = event.progress.toFixed(1).padStart(5);
           const mb = event.total ? ` (${(event.total / 1_048_576).toFixed(1)} MB)` : "";
           if (!fileProgress.has(file)) fileOrder.push(file);
-          fileProgress.set(file, `  ${file}${mb} ${pct}%`);
+          fileProgress.set(file, `${file}${mb} ${pct}%`);
           redrawProgress();
         }
       },

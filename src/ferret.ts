@@ -16,6 +16,7 @@ import {
   registerProject,
   readProjectConfig,
 } from "./projects.js";
+import { generateBenchmark, runBenchmark, printResults } from "./benchmark/index.js";
 
 const program = new Command();
 
@@ -229,6 +230,54 @@ program
       const age = formatRelativeTime(p.indexedAt);
       console.log(`  ${p.name.padEnd(24)} ${p.path}`);
       console.log(`  ${"".padEnd(24)} indexed ${age}\n`);
+    }
+  });
+
+// ── ferret benchmark ──────────────────────────────────────────────────────────
+const benchmark = program
+  .command("benchmark")
+  .description("Generate and run LLM-powered search quality benchmarks");
+
+benchmark
+  .command("generate")
+  .description("Sample chunks from the index and generate evaluation questions via the Anthropic API")
+  .option("-n, --sample <n>", "Number of chunks to sample", "100")
+  .option("--model <model>", "Anthropic model to use for generation", "claude-haiku-4-5")
+  .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
+  .action(async (opts: { sample: string; model: string; project?: string }) => {
+    const projectRoot = opts.project ? path.resolve(opts.project) : resolveProjectFromCwd() ?? process.cwd();
+    const store = new LanceDbStore(resolveDbPath(opts.project));
+    try {
+      await generateBenchmark(store, {
+        sample: parseInt(opts.sample),
+        model: opts.model,
+        projectRoot,
+      });
+    } catch (e) {
+      console.error("Benchmark generation failed:", e instanceof Error ? e.message : e);
+      process.exit(1);
+    } finally {
+      await store.disconnect();
+    }
+  });
+
+benchmark
+  .command("run")
+  .description("Evaluate search quality against the generated benchmark")
+  .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
+  .action(async (opts: { project?: string }) => {
+    const projectRoot = opts.project ? path.resolve(opts.project) : resolveProjectFromCwd() ?? process.cwd();
+    const store = new LanceDbStore(resolveDbPath(opts.project));
+    const embedder = new HuggingFaceEmbedder();
+    const searcher = new Searcher(embedder, store, new CrossEncoderRanker(), new MmrSelector());
+    try {
+      const results = await runBenchmark(searcher, { projectRoot });
+      printResults(results);
+    } catch (e) {
+      console.error("Benchmark run failed:", e instanceof Error ? e.message : e);
+      process.exit(1);
+    } finally {
+      await store.disconnect();
     }
   });
 

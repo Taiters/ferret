@@ -33,6 +33,10 @@ export function localDbPath(projectRoot: string): string {
   return path.join(projectRoot, ".ferret", "db");
 }
 
+export function benchmarkPath(projectRoot: string): string {
+  return path.join(projectRoot, ".ferret", "benchmark.json");
+}
+
 export function readRegistry(): ProjectMeta[] {
   if (!fs.existsSync(REGISTRY_PATH)) return [];
   try {
