@@ -23,7 +23,7 @@ const program = new Command();
 program
   .name("ferret")
   .description("Semantic codebase search for Claude Code")
-  .version("0.1.2");
+  .version("0.1.3");
 
 function resolveDbPath(explicitProjectPath?: string): string {
   if (explicitProjectPath) return localDbPath(path.resolve(explicitProjectPath));
