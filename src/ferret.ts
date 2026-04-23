@@ -35,10 +35,6 @@ function resolveDbPath(explicitProjectPath?: string): string {
   );
 }
 
-function resolveProjectRoot(explicitProjectPath?: string): string {
-  if (explicitProjectPath) return path.resolve(explicitProjectPath);
-  return resolveProjectFromCwd() ?? process.cwd();
-}
 
 function formatRelativeTime(isoDate: string): string {
   const diff = Date.now() - new Date(isoDate).getTime();
