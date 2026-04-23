@@ -1,9 +1,26 @@
 {
   "name": "ferret",
   "description": "Semantic codebase search for Claude Code — index once, query every conversation",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "author": {
-    "name": "Dan Tait"
+    "name": "Dan Tait",
+    "email": "dantait91@gmail.com",
+    "url": "https://dotslashdan.com"
   },
-  "homepage": "https://github.com/Taiters/ferret"
+  "homepage": "https://github.com/Taiters/ferret#readme",
+  "repository": "https://github.com/Taiters/ferret",
+  "license": "MIT",
+  "keywords": [
+    "semantic-search",
+    "code-search",
+    "codebase-search",
+    "vector-search",
+    "embeddings",
+    "llm",
+    "ai",
+    "rag",
+    "tree-sitter",
+    "developer-tools"
+  ],
+  "skills": "../skills/"
 }
