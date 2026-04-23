@@ -2,9 +2,13 @@
 import path from "path";
 import fs from "fs";
 import { Command } from "commander";
-import { indexProject } from "./indexer.js";
-import { searchMemory, searchAllProjects, searchHistory, showGraph } from "./search.js";
-import { Store } from "./store.js";
+import { HuggingFaceEmbedder } from "./embedding/index.js";
+import { CrossEncoderRanker, MmrSelector } from "./ranking/index.js";
+import { LanceDbStore } from "./store/index.js";
+import { Indexer } from "./indexer/index.js";
+import { Searcher } from "./search/index.js";
+import { registry } from "./ingestion/registry.js";
+import type { SearchHit } from "./types.js";
 import {
   localDbPath,
   resolveProjectFromCwd,
@@ -20,24 +24,20 @@ program
   .description("Semantic codebase search for Claude Code")
   .version("1.0.0");
 
-function resolveStore(explicitProjectPath?: string): Store {
-  if (explicitProjectPath) {
-    return new Store(localDbPath(path.resolve(explicitProjectPath)));
-  }
+function resolveDbPath(explicitProjectPath?: string): string {
+  if (explicitProjectPath) return localDbPath(path.resolve(explicitProjectPath));
   const detected = resolveProjectFromCwd();
-  if (detected) return new Store(localDbPath(detected));
+  if (detected) return localDbPath(detected);
   throw new Error(
     "No indexed project found in the current directory tree.\n" +
-    "Run: ferret index <path>\n" +
-    "Or specify: --project <path>",
+      "Run: ferret index <path>\n" +
+      "Or specify: --project <path>",
   );
 }
 
 function resolveProjectRoot(explicitProjectPath?: string): string {
   if (explicitProjectPath) return path.resolve(explicitProjectPath);
-  const detected = resolveProjectFromCwd();
-  if (detected) return detected;
-  return process.cwd();
+  return resolveProjectFromCwd() ?? process.cwd();
 }
 
 function formatRelativeTime(isoDate: string): string {
@@ -46,29 +46,41 @@ function formatRelativeTime(isoDate: string): string {
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function formatHits(hits: SearchHit[], query: string): string {
+  const lines = [
+    `SEARCH: "${query}"`,
+    `Found ${hits.length} result(s)`,
+    "─".repeat(60),
+  ];
+  for (const hit of hits) {
+    lines.push(`\n${hit.symbolId}  (lines ${hit.startLine}–${hit.endLine})`);
+    lines.push("```");
+    lines.push(hit.content.length > 1500 ? hit.content.slice(0, 1500) + "\n... [truncated]" : hit.content);
+    lines.push("```");
+  }
+  return lines.join("\n");
 }
 
 // ── ferret index <path> ───────────────────────────────────────────────────────
 program
   .command("index <path>")
-  .description("Index a codebase into the memory store")
-  .option("--git-limit <n>", "Number of git commits to ingest", "50")
+  .description("Index a codebase")
   .option("-v, --verbose", "Show skipped files")
-  .option("--gitignore", "Create .ferret/.gitignore to exclude db/ from version control")
-  .action(async (projectPath: string, opts: { gitLimit: string; verbose?: boolean; gitignore?: boolean }) => {
+  .option("--gitignore", "Create .ferret/.gitignore to exclude db/")
+  .action(async (projectPath: string, opts: { verbose?: boolean; gitignore?: boolean }) => {
     const absPath = path.resolve(projectPath);
-    const store = new Store(localDbPath(absPath));
+    const store = new LanceDbStore(localDbPath(absPath));
+    const embedder = new HuggingFaceEmbedder();
+    const indexer = new Indexer(embedder, store, registry);
     try {
-      await indexProject(absPath, store, {
-        gitLimit: parseInt(opts.gitLimit),
-        verbose: opts.verbose,
-      });
+      await indexer.index(absPath, { verbose: opts.verbose });
       if (opts.gitignore) {
         const gitignorePath = path.join(absPath, ".ferret", ".gitignore");
         fs.writeFileSync(gitignorePath, "db/\n");
-        console.log("  Created .ferret/.gitignore (ignoring db/)");
+        console.log("  Created .ferret/.gitignore");
       }
     } catch (e) {
       console.error("Indexing failed:", e instanceof Error ? e.message : e);
@@ -81,165 +93,128 @@ program
 // ── ferret search <query> ─────────────────────────────────────────────────────
 program
   .command("search <query>")
-  .description("Semantic search across indexed memory")
+  .description("Semantic search across indexed code")
   .option("-k, --top-k <n>", "Number of results", "6")
-  .option("-g, --graph", "Include call graph edges in results")
   .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
-  .option("-a, --all", "Search across all indexed projects")
-  .option("--category <cat>", "Category to include, repeatable (code, docs, text); default: code", (val, prev: string[]) => prev.concat(val), [] as string[])
-  .option("--min-score <n>", "Minimum relevance score 0–1 (default: 0)", "0")
-  .action(async (query: string, opts: { topK: string; graph?: boolean; project?: string; all?: boolean; category: string[]; minScore: string }) => {
-    const minScore = parseFloat(opts.minScore);
-    const categories = opts.category.length > 0 ? opts.category as Array<"code" | "docs" | "text"> : ["code" as const];
+  .option("--min-score <n>", "Minimum relevance score 0–1", "0")
+  .action(async (query: string, opts: { topK: string; project?: string; minScore: string }) => {
+    const store = new LanceDbStore(resolveDbPath(opts.project));
+    const embedder = new HuggingFaceEmbedder();
+    const searcher = new Searcher(embedder, store, new CrossEncoderRanker(), new MmrSelector());
     try {
-      if (opts.all) {
-        const result = await searchAllProjects(query, {
-          topK: parseInt(opts.topK),
-          graph: opts.graph,
-          categories,
-          minScore,
-        });
-        console.log(result);
-      } else {
-        const store = resolveStore(opts.project);
-        const projectRoot = resolveProjectRoot(opts.project);
-        try {
-          const result = await searchMemory(query, store, {
-            topK: parseInt(opts.topK),
-            graph: opts.graph,
-            categories,
-            minScore,
-            projectRoot,
-          });
-          console.log(result);
-        } finally {
-          await store.disconnect();
-        }
-      }
+      const hits = await searcher.search(query, parseInt(opts.topK), parseFloat(opts.minScore));
+      console.log(formatHits(hits, query));
     } catch (e) {
       console.error("Search failed:", e instanceof Error ? e.message : e);
       process.exit(1);
+    } finally {
+      await store.disconnect();
     }
   });
 
-// ── ferret history <query> ────────────────────────────────────────────────────
+// ── ferret symbol <symbolId> ──────────────────────────────────────────────────
 program
-  .command("history <query>")
-  .description("Search git history for commits related to a query")
-  .option("-k, --top-k <n>", "Number of results", "6")
-  .option("--file <path>", "Filter to commits that touched a specific file")
+  .command("symbol <symbolId>")
+  .description("Look up a symbol by its ID (e.g. src/search.ts:Searcher.search)")
   .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
-  .action(async (query: string, opts: { topK: string; file?: string; project?: string }) => {
-    let store: Store | undefined;
+  .action(async (symbolId: string, opts: { project?: string }) => {
+    const store = new LanceDbStore(resolveDbPath(opts.project));
     try {
-      store = resolveStore(opts.project);
-      const result = await searchHistory(query, store, {
-        topK: parseInt(opts.topK),
-        file: opts.file,
-      });
-      console.log(result);
+      const chunk = await store.getSymbol(symbolId);
+      if (!chunk) {
+        console.log(`Symbol not found: "${symbolId}"`);
+        console.log("Re-index and try again, or check the symbol ID format (e.g. src/file.ts:functionName)");
+        process.exit(1);
+      }
+      console.log(`\n${chunk.symbolId}  (lines ${chunk.startLine}–${chunk.endLine})`);
+      console.log(`File: ${chunk.file}`);
+      console.log("```");
+      console.log(chunk.content);
+      console.log("```");
     } catch (e) {
-      console.error("History search failed:", e instanceof Error ? e.message : e);
+      console.error("Symbol lookup failed:", e instanceof Error ? e.message : e);
       process.exit(1);
     } finally {
-      await store?.disconnect();
+      await store.disconnect();
     }
   });
 
-// ── ferret graph <fn-name> ────────────────────────────────────────────────────
+// ── ferret graph <symbolId> ───────────────────────────────────────────────────
 program
-  .command("graph <function>")
-  .description("Show call graph around a function")
+  .command("graph <symbolId>")
+  .description("Show call graph around a symbol")
   .option("-d, --depth <n>", "Graph traversal depth", "2")
   .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
-  .action(async (fnName: string, opts: { depth: string; project?: string }) => {
-    let store: Store | undefined;
+  .action(async (symbolId: string, opts: { depth: string; project?: string }) => {
+    const store = new LanceDbStore(resolveDbPath(opts.project));
+    const depth = parseInt(opts.depth);
     try {
-      store = resolveStore(opts.project);
-      const result = await showGraph(fnName, store, parseInt(opts.depth));
-      console.log(result);
+      const visited = new Set<string>();
+      const lines = [`CALL GRAPH: ${symbolId}`, "─".repeat(60)];
+
+      async function walk(id: string, indent: number, d: number): Promise<void> {
+        if (visited.has(id) || d > depth) return;
+        visited.add(id);
+        const edges = await store.getGraphEdges(id);
+        lines.push(`${"  ".repeat(indent)}${indent === 0 ? "◉" : "→"} ${id}`);
+        if (edges.calledBy.length && indent === 0) {
+          lines.push(`${"  ".repeat(indent + 1)}← called by: ${edges.calledBy.join(", ")}`);
+        }
+        for (const callee of edges.calls) await walk(callee, indent + 1, d + 1);
+      }
+
+      await walk(symbolId, 0, 0);
+
+      if (lines.length === 2) {
+        console.log(`No graph data found for "${symbolId}". Ensure the codebase is indexed.`);
+      } else {
+        console.log(lines.join("\n"));
+      }
     } catch (e) {
       console.error("Graph failed:", e instanceof Error ? e.message : e);
       process.exit(1);
     } finally {
-      await store?.disconnect();
+      await store.disconnect();
     }
   });
 
 // ── ferret stats ──────────────────────────────────────────────────────────────
 program
   .command("stats")
-  .description("Show memory store statistics")
+  .description("Show index statistics")
   .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
-  .option("-a, --all", "Show stats for all indexed projects")
-  .action(async (opts: { project?: string; all?: boolean }) => {
+  .action(async (opts: { project?: string }) => {
+    const store = new LanceDbStore(resolveDbPath(opts.project));
     try {
-      if (opts.all) {
-        const projects = readRegistry();
-        if (projects.length === 0) {
-          console.log("No projects indexed yet. Run: ferret index <path>");
-          return;
-        }
-        for (const p of projects) {
-          const store = new Store(localDbPath(p.path));
-          try {
-            const { chunks: total, graphNodes } = await store.getStats();
-            const byCategory = await store.getAllByCategory();
-            console.log(`\n${p.name} (${p.path})`);
-            console.log("─".repeat(60));
-            console.log(`Total chunks : ${total}`);
-            console.log(`Graph nodes  : ${graphNodes}`);
-            for (const [cat, count] of Object.entries(byCategory)) {
-              console.log(`  ${cat.padEnd(12)} ${count}`);
-            }
-          } finally {
-            await store.disconnect();
-          }
-        }
-        console.log();
-      } else {
-        const store = resolveStore(opts.project);
-        try {
-          const { chunks: total, graphNodes } = await store.getStats();
-          const byCategory = await store.getAllByCategory();
-          console.log("\nFerret Stats");
-          console.log("──────────────────");
-          console.log(`Total chunks : ${total}`);
-          console.log(`Graph nodes  : ${graphNodes}`);
-          console.log("\nBy category:");
-          for (const [cat, count] of Object.entries(byCategory)) {
-            console.log(`  ${cat.padEnd(12)} ${count}`);
-          }
-          console.log();
-        } finally {
-          await store.disconnect();
-        }
-      }
+      const { chunks, graphNodes } = await store.getStats();
+      console.log("\nFerret Stats");
+      console.log("──────────────────");
+      console.log(`Chunks      : ${chunks}`);
+      console.log(`Graph nodes : ${graphNodes}`);
+      console.log();
     } catch (e) {
       console.error("Stats failed:", e instanceof Error ? e.message : e);
       process.exit(1);
+    } finally {
+      await store.disconnect();
     }
   });
 
 // ── ferret register [path] ────────────────────────────────────────────────────
 program
   .command("register [path]")
-  .description("Register an existing indexed project in the local registry")
+  .description("Register an existing indexed project")
   .action((projectPath?: string) => {
     const absPath = projectPath ? path.resolve(projectPath) : process.cwd();
     const dbPath = localDbPath(absPath);
-
     if (!fs.existsSync(dbPath)) {
       console.error(`No index found at ${dbPath}`);
       console.error("Run: ferret index <path>");
       process.exit(1);
     }
-
     registerProject(absPath);
     console.log(`Registered: ${absPath}`);
-    if (!readProjectConfig(absPath)) {
-      console.log(`  (no index-info.json found)`);
-    }
+    if (!readProjectConfig(absPath)) console.log("  (no index-info.json found)");
   });
 
 // ── ferret projects ───────────────────────────────────────────────────────────
