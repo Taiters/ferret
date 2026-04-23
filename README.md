@@ -31,21 +31,15 @@ npm link
 
 This makes `ferret` available globally in your terminal.
 
-### 2. Register the skill with Claude Code
+### 2. Enable the plugin
 
-Copy `SKILL.md` into your project's skills directory:
-
-```bash
-mkdir -p /path/to/your/project/.claude/skills
-cp ~/repos/Taiters/memory-skill/SKILL.md /path/to/your/project/.claude/skills/ferret.md
-```
-
-Or install it globally for all Claude Code sessions:
+Load the plugin for a session:
 
 ```bash
-mkdir -p ~/.claude/skills
-cp ~/repos/Taiters/memory-skill/SKILL.md ~/.claude/skills/ferret.md
+claude --plugin-dir ~/repos/Taiters/memory-skill
 ```
+
+Or install it permanently via the Claude Code plugin manager.
 
 ---
 
@@ -90,7 +84,7 @@ ferret stats
 
 ## How Claude Code uses it
 
-Once `SKILL.md` is in `.claude/skills/`, Claude Code reads it at session start and knows to call `ferret search` before answering questions about your code.
+Once the plugin is enabled, Claude Code automatically uses `ferret search` before answering questions about your code.
 
 Example conversation:
 ```
@@ -108,20 +102,19 @@ Claude grounds answers in your actual code without you needing to paste anything
 ## Architecture
 
 ```
-your project/
-└── .claude/skills/ferret.md    ← Claude Code reads this
-
-~/repos/Taiters/memory-skill/
-├── src/
-│   ├── ferret.ts               ← CLI entry point
-│   ├── indexer.ts              ← orchestrates indexing
-│   ├── search.ts               ← semantic search + graph
-│   ├── embedder.ts             ← local transformers.js embeddings
-│   ├── store.ts                ← LanceDB interface
-│   └── ingestion/
-│       ├── parser.ts           ← tree-sitter chunker (py/js/ts)
-│       ├── markdown.ts         ← heading-based md splitter
-│       └── git.ts              ← git log ingestion
+~/repos/Taiters/memory-skill/       ← the plugin directory
+├── .claude-plugin/plugin.json       ← plugin manifest
+├── skills/
+│   ├── search/SKILL.md              ← ferret:search skill
+│   └── graph/SKILL.md               ← ferret:graph skill
+├── bin/ferret                        ← wrapper added to PATH when plugin is active
+└── src/
+    ├── ferret.ts                     ← CLI entry point
+    ├── indexer/                      ← orchestrates indexing
+    ├── search/                       ← semantic search pipeline
+    ├── embedding/                    ← local transformers.js embeddings
+    ├── store/                        ← LanceDB interface
+    └── ingestion/                    ← tree-sitter parsers (py/js/ts)
 
 LanceDB (local, file-based):
   - Vectors stored in chunks table with HNSW index
@@ -145,9 +138,7 @@ Takes the same time as initial indexing. Recommended after large refactors or wh
 ## Troubleshooting
 
 **`ferret: command not found`**
-```bash
-cd ~/repos/Taiters/memory-skill && npm run build && npm link
-```
+Make sure the plugin is enabled — either via `claude --plugin-dir` or the plugin manager. The plugin's `bin/ferret` wrapper is what puts `ferret` on PATH.
 
 **`No results found`**
 - Check `ferret stats` — if total is 0, index first

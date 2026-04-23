@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A semantic codebase search tool for Claude Code. It indexes codebases into a local LanceDB vector store and exposes a `ferret` CLI for semantic search and call graph queries. The `SKILL.md` file is copied into other projects' `.claude/skills/` so Claude Code there can query this indexed codebase.
+A semantic codebase search tool for Claude Code. It indexes codebases into a local LanceDB vector store and exposes a `ferret` CLI for semantic search and call graph queries. It is distributed as a Claude Code plugin — the `skills/` directory contains the skills Claude Code loads when the plugin is enabled.
 
 ## Prerequisites & Setup
 
@@ -95,4 +95,4 @@ dist/                   # Compiled output (gitignored)
 - Search pipeline: KNN → cross-encoder rerank → MMR selection (three-stage)
 - Full re-index on every `ferret index` run (no incremental updates)
 - Parsers are registered via `ParserRegistry`; adding a new language = new `LanguageParser` implementation
-- `SKILL.md` is the artifact installed into other projects — changes here affect how Claude Code behaves in those projects
+- `skills/search/SKILL.md` and `skills/graph/SKILL.md` define how Claude Code uses ferret — changes here affect behaviour in projects with the plugin enabled

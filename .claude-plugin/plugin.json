@@ -1,0 +1,9 @@
+{
+  "name": "ferret",
+  "description": "Semantic codebase search for Claude Code — index once, query every conversation",
+  "version": "1.0.0",
+  "author": {
+    "name": "Dan Tait"
+  },
+  "homepage": "https://github.com/Taiters/memory-skill"
+}
