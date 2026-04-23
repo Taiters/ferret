@@ -24,8 +24,9 @@ export interface LanguageParser {
   parse(filePath: string, source: string): ParseResult;
 
   /**
-   * Format a chunk for embedding. chunk.file is already relative to project root.
-   * Optional — if absent the indexer uses a default format.
+   * Called by the Indexer to format a chunk's content before embedding.
+   * chunk.file is relative to project root (already normalized by the Indexer).
+   * If absent, the Indexer falls back to its own default formatting.
    */
   formatForEmbedding?(chunk: Chunk): string;
 }
