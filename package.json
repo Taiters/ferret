@@ -16,7 +16,9 @@
     "index": "node dist/ferret.js index",
     "search": "node dist/ferret.js search",
     "stats": "node dist/ferret.js stats",
-    "bench": "npx tsx scripts/benchmark.ts"
+    "bench": "npx tsx scripts/benchmark.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.1.0",
@@ -32,6 +34,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^1.6.0"
   }
 }
