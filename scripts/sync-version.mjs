@@ -16,10 +16,11 @@ console.log(`Updated .claude-plugin/plugin.json → ${version}`);
 // Update src/ferret.ts
 const ferretPath = join(root, 'src/ferret.ts');
 const ferret = readFileSync(ferretPath, 'utf8');
-const updated = ferret.replace(/\.version\("[^"]*"\)/, '.version("' + version + '")');
-if (updated === ferret) {
+const pattern = /\.version\("[^"]*"\)/;
+if (!pattern.test(ferret)) {
   console.error('Error: Could not find .version("...") pattern in src/ferret.ts');
   process.exit(1);
 }
+const updated = ferret.replace(pattern, '.version("' + version + '")');
 writeFileSync(ferretPath, updated);
 console.log(`Updated src/ferret.ts → ${version}`);
