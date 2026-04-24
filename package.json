@@ -1,6 +1,6 @@
 {
   "name": "@taiters/ferret",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "author": "Dan Tait <dantait91@gmail.com> (https://dotslashdan.com)",
   "description": "Semantic codebase search for LLMs — index once, query every conversation",
   "keywords": [

@@ -25,7 +25,7 @@ const program = new Command();
 program
   .name("ferret")
   .description("Semantic codebase search for Claude Code")
-  .version("0.1.4");
+  .version("0.2.0");
 
 function resolveProjectRoot(explicitProjectPath?: string): string {
   if (explicitProjectPath) return path.resolve(explicitProjectPath);
