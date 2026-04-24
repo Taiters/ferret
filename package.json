@@ -52,6 +52,7 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
+    "version": "node scripts/sync-version.mjs && git add .claude-plugin/plugin.json src/ferret.ts",
     "index": "node dist/ferret.js index",
     "search": "node dist/ferret.js search",
     "stats": "node dist/ferret.js stats",
