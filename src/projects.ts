@@ -5,8 +5,17 @@ import type { ProjectMeta } from "./types.js";
 
 const REGISTRY_PATH = path.join(os.homedir(), ".local", "share", "ferret", "registry.json");
 
+export const DEFAULT_EMBEDDING_MODEL = "Xenova/all-MiniLM-L6-v2";
+
+export interface GlobalConfig {
+  model?: string;
+}
+
+const GLOBAL_CONFIG_PATH = path.join(os.homedir(), ".local", "share", "ferret", "config.json");
+
 export interface ProjectConfig {
   indexedAt: string;
+  model?: string;
 }
 
 export function projectConfigPath(projectRoot: string): string {
@@ -27,6 +36,32 @@ export function readProjectConfig(projectRoot: string): ProjectConfig | null {
   } catch {
     return null;
   }
+}
+
+export function readGlobalConfig(): GlobalConfig {
+  if (!fs.existsSync(GLOBAL_CONFIG_PATH)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(GLOBAL_CONFIG_PATH, "utf8")) as GlobalConfig;
+  } catch {
+    return {};
+  }
+}
+
+export function writeGlobalConfig(config: GlobalConfig): void {
+  const dir = path.dirname(GLOBAL_CONFIG_PATH);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(GLOBAL_CONFIG_PATH, JSON.stringify(config, null, 2));
+}
+
+/**
+ * Resolves the embedding model for a new index run.
+ * Resolution order: flagValue → globalCfg → DEFAULT_EMBEDDING_MODEL
+ * The globalCfg parameter is injectable for testing; omit it to use the real global config.
+ */
+export function resolveModel(flagValue?: string, globalCfg?: GlobalConfig): string {
+  if (flagValue) return flagValue;
+  const g = globalCfg ?? readGlobalConfig();
+  return g.model ?? DEFAULT_EMBEDDING_MODEL;
 }
 
 export function localDbPath(projectRoot: string): string {
