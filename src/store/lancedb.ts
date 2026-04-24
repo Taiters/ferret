@@ -1,6 +1,7 @@
 import * as lancedb from "@lancedb/lancedb";
 import { Index } from "@lancedb/lancedb";
 import type { Connection, Table } from "@lancedb/lancedb";
+import { Schema, Field, Utf8, Int32, FixedSizeList, Float16 } from "apache-arrow";
 import fs from "fs";
 import type { Chunk, EmbeddedChunk, SearchHit, GraphEdges, StoreStats, CallGraph } from "../types.js";
 import type { ChunkStore } from "./types.js";
@@ -72,9 +73,21 @@ export class LanceDbStore implements ChunkStore {
     const tableNames = await db.tableNames();
     if (tableNames.includes(CHUNKS_TABLE)) {
       this._chunksTable = await db.openTable(CHUNKS_TABLE);
+      // The existing table already has Float16 schema from createTable; LanceDB enforces it on add().
       await this._chunksTable.add(rows);
     } else {
-      this._chunksTable = await db.createTable(CHUNKS_TABLE, rows);
+      const dim = chunks[0].vector.length;
+      const chunksSchema = new Schema([
+        new Field("id", new Utf8()),
+        new Field("symbol_id", new Utf8()),
+        new Field("file", new Utf8()),
+        new Field("name", new Utf8()),
+        new Field("content", new Utf8()),
+        new Field("start_line", new Int32()),
+        new Field("end_line", new Int32()),
+        new Field("vector", new FixedSizeList(dim, new Field("item", new Float16(), false))),
+      ]);
+      this._chunksTable = await db.createTable(CHUNKS_TABLE, rows, { schema: chunksSchema });
     }
 
     // ── Write graph (invert calledBy here) ───────────────────────────────────
@@ -133,6 +146,7 @@ export class LanceDbStore implements ChunkStore {
       config: Index.fts({ withPosition: false }),
       replace: true,
     });
+    await table.optimize({ cleanupOlderThan: new Date() });
   }
 
   private async ftsSearch(query: string, topK: number): Promise<Array<{ id: string; rank: number }>> {

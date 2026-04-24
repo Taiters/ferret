@@ -15,6 +15,8 @@ import {
   readRegistry,
   registerProject,
   readProjectConfig,
+  resolveModel,
+  DEFAULT_EMBEDDING_MODEL,
 } from "./projects.js";
 import { generateBenchmark, runBenchmark, printResults } from "./benchmark/index.js";
 
@@ -25,15 +27,19 @@ program
   .description("Semantic codebase search for Claude Code")
   .version("0.1.4");
 
-function resolveDbPath(explicitProjectPath?: string): string {
-  if (explicitProjectPath) return localDbPath(path.resolve(explicitProjectPath));
+function resolveProjectRoot(explicitProjectPath?: string): string {
+  if (explicitProjectPath) return path.resolve(explicitProjectPath);
   const detected = resolveProjectFromCwd();
-  if (detected) return localDbPath(detected);
+  if (detected) return detected;
   throw new Error(
     "No indexed project found in the current directory tree.\n" +
       "Run: ferret index <path>\n" +
       "Or specify: --project <path>",
   );
+}
+
+function resolveDbPath(explicitProjectPath?: string): string {
+  return localDbPath(resolveProjectRoot(explicitProjectPath));
 }
 
 
@@ -67,13 +73,15 @@ program
   .description("Index a codebase")
   .option("-v, --verbose", "Show skipped files")
   .option("--gitignore", "Create .ferret/.gitignore to exclude db/")
-  .action(async (projectPath: string, opts: { verbose?: boolean; gitignore?: boolean }) => {
+  .option("--model <name>", "Embedding model (overrides global config)")
+  .action(async (projectPath: string, opts: { verbose?: boolean; gitignore?: boolean; model?: string }) => {
     const absPath = path.resolve(projectPath);
+    const model = resolveModel(opts.model);
     const store = new LanceDbStore(localDbPath(absPath));
-    const embedder = new HuggingFaceEmbedder();
+    const embedder = new HuggingFaceEmbedder(model);
     const indexer = new Indexer(embedder, store, registry);
     try {
-      await indexer.index(absPath, { verbose: opts.verbose });
+      await indexer.index(absPath, { verbose: opts.verbose, model });
       if (opts.gitignore) {
         const gitignorePath = path.join(absPath, ".ferret", ".gitignore");
         fs.writeFileSync(gitignorePath, "db/\n");
@@ -95,8 +103,10 @@ program
   .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
   .option("--min-score <n>", "Minimum relevance score 0–1", "0")
   .action(async (query: string, opts: { topK: string; project?: string; minScore: string }) => {
-    const store = new LanceDbStore(resolveDbPath(opts.project));
-    const embedder = new HuggingFaceEmbedder();
+    const projectRoot = resolveProjectRoot(opts.project);
+    const store = new LanceDbStore(localDbPath(projectRoot));
+    const model = readProjectConfig(projectRoot)?.model ?? DEFAULT_EMBEDDING_MODEL;
+    const embedder = new HuggingFaceEmbedder(model);
     const searcher = new Searcher(embedder, store, new CrossEncoderRanker(), new MmrSelector());
     try {
       const hits = await searcher.search(query, parseInt(opts.topK), parseFloat(opts.minScore));
@@ -181,13 +191,16 @@ program
   .description("Show index statistics")
   .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
   .action(async (opts: { project?: string }) => {
-    const store = new LanceDbStore(resolveDbPath(opts.project));
+    const projectRoot = resolveProjectRoot(opts.project);
+    const store = new LanceDbStore(localDbPath(projectRoot));
+    const config = readProjectConfig(projectRoot);
     try {
       const { chunks, graphNodes } = await store.getStats();
       console.log("\nFerret Stats");
       console.log("──────────────────");
       console.log(`Chunks      : ${chunks}`);
       console.log(`Graph nodes : ${graphNodes}`);
+      if (config?.model) console.log(`Model       : ${config.model}`);
       console.log();
     } catch (e) {
       console.error("Stats failed:", e instanceof Error ? e.message : e);
@@ -246,7 +259,7 @@ benchmark
   .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
   .action(async (opts: { sample: string; model: string; project?: string }) => {
     const projectRoot = opts.project ? path.resolve(opts.project) : resolveProjectFromCwd() ?? process.cwd();
-    const store = new LanceDbStore(resolveDbPath(opts.project));
+    const store = new LanceDbStore(localDbPath(projectRoot));
     try {
       await generateBenchmark(store, {
         sample: parseInt(opts.sample),
@@ -267,8 +280,9 @@ benchmark
   .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
   .action(async (opts: { project?: string }) => {
     const projectRoot = opts.project ? path.resolve(opts.project) : resolveProjectFromCwd() ?? process.cwd();
-    const store = new LanceDbStore(resolveDbPath(opts.project));
-    const embedder = new HuggingFaceEmbedder();
+    const store = new LanceDbStore(localDbPath(projectRoot));
+    const model = readProjectConfig(projectRoot)?.model ?? DEFAULT_EMBEDDING_MODEL;
+    const embedder = new HuggingFaceEmbedder(model);
     const searcher = new Searcher(embedder, store, new CrossEncoderRanker(), new MmrSelector());
     try {
       const results = await runBenchmark(searcher, { projectRoot });
@@ -279,6 +293,25 @@ benchmark
     } finally {
       await store.disconnect();
     }
+  });
+
+// ── ferret models ─────────────────────────────────────────────────────────────
+program
+  .command("models")
+  .description("List suggested embedding models")
+  .action(() => {
+    console.log(
+      "\nSuggested models (any @huggingface/transformers-compatible model can be used via --model <name>):\n",
+    );
+    const cols = "  Model                               Dims  Speed    Quality  Notes";
+    const rows = [
+      "  Xenova/all-MiniLM-L6-v2 (default)   384   Fast     Good     Best balance of size and quality",
+      "  Xenova/all-mpnet-base-v2             768   Slow     Best     Highest quality, 4× larger DB",
+      "  Xenova/paraphrase-MiniLM-L3-v2      384   Fastest  Fair     Smallest footprint",
+    ];
+    console.log(cols);
+    for (const row of rows) console.log(row);
+    console.log();
   });
 
 program.parse();

@@ -31,7 +31,7 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 const MODELS = [
   "Xenova/all-MiniLM-L6-v2",
   "Xenova/all-MiniLM-L12-v2",
-  "Xenova/all-mpnet-base-v2",         // current default
+  "Xenova/all-mpnet-base-v2",
   "onnx-community/bge-base-en-v1.5",
   "onnx-community/nomic-embed-text-v1.5",
   "jinaai/jina-embeddings-v2-base-code",

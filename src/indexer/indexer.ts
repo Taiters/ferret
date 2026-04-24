@@ -10,6 +10,7 @@ import type { Chunk, EmbeddedChunk, CallGraph } from "../types.js";
 
 export interface IndexOptions {
   verbose?: boolean;
+  model?: string;
 }
 
 const IGNORE_DIRS = [
@@ -89,7 +90,7 @@ export class Indexer {
     await this.store.buildFtsIndex();
 
     const indexedAt = new Date().toISOString();
-    writeProjectConfig(absPath, { indexedAt });
+    writeProjectConfig(absPath, { indexedAt, model: opts.model });
     registerProject(absPath);
 
     console.log("\n  ✅ Done!\n");

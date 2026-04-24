@@ -64,6 +64,7 @@
     "@anthropic-ai/sdk": "^0.90.0",
     "@huggingface/transformers": "^4.1.0",
     "@lancedb/lancedb": "^0.14.0",
+    "apache-arrow": ">=13.0.0 <=17.0.0",
     "commander": "^12.1.0",
     "glob": "^11.0.0",
     "tree-sitter": "^0.21.1",

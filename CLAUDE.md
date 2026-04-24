@@ -43,7 +43,7 @@ src/
   ferret.ts             # CLI entry point (Commander.js)
   projects.ts           # Project registry, DB path resolution, CWD detection
   embedding/
-    huggingface.ts      # Local embeddings via @huggingface/transformers (all-mpnet-base-v2)
+    huggingface.ts      # Local embeddings via @huggingface/transformers (all-MiniLM-L6-v2)
     types.ts            # Embedder interface
   indexer/
     indexer.ts          # Indexing pipeline orchestrator
@@ -81,7 +81,7 @@ dist/                   # Compiled output (gitignored)
 **Indexing pipeline** (`indexer/indexer.ts` orchestrates):
 1. File discovery via glob; ignores node_modules, dist, lock files, .ferret/, files >500KB
 2. Code parsing via `ParserRegistry`: tree-sitter extracts functions/classes for JS/TS/TSX/Python; call graph built simultaneously; unknown file types fall back to plain-text windowing
-3. Embedding: `HuggingFaceEmbedder` uses Xenova/all-mpnet-base-v2, cached at `~/.cache/huggingface/`. First run downloads ~400MB.
+3. Embedding: `HuggingFaceEmbedder` uses Xenova/all-MiniLM-L6-v2 by default (configurable via --model), cached at `~/.cache/ferret/`. First run downloads ~80MB.
 4. Storage: `LanceDbStore` writes `chunks` table (vectors + FTS index) and `graph` table. DB lives at `<project>/.ferret/db`.
 
 **Search pipeline** (`search/searcher.ts`):

@@ -1,4 +1,5 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
+import { rmSync } from "fs";
 import type { Embedder } from "../../src/embedding/types.js";
 import type { ChunkStore } from "../../src/store/types.js";
 import type { ParserRegistry } from "../../src/ingestion/parserRegistry.js";
@@ -15,11 +16,24 @@ const mockStore: ChunkStore = {
   getSymbol: vi.fn().mockResolvedValue(null),
   getGraphEdges: vi.fn().mockResolvedValue({ calls: [], calledBy: [] }),
   getStats: vi.fn().mockResolvedValue({ chunks: 0, graphNodes: 0 }),
+  sampleChunks: vi.fn().mockResolvedValue([]),
   disconnect: vi.fn().mockResolvedValue(undefined),
 };
 
+const mockParserRegistry = {
+  registeredExtensions: vi.fn().mockReturnValue([]),
+  get: vi.fn().mockReturnValue(undefined),
+  parseFile: vi.fn().mockReturnValue({ chunks: [], graph: new Map() }),
+} as unknown as ParserRegistry;
+
 describe("Indexer", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  afterEach(() => {
+    try {
+      rmSync("/tmp/.ferret/index-info.json", { force: true });
+    } catch {}
+  });
 
   test("flushes the store before indexing", async () => {
     const callOrder: string[] = [];
@@ -32,9 +46,21 @@ describe("Indexer", () => {
       return Promise.resolve();
     });
     const { Indexer } = await import("../../src/indexer/indexer.js");
-    const indexer = new Indexer(mockEmbedder, mockStore, {} as ParserRegistry);
+    const indexer = new Indexer(mockEmbedder, mockStore, mockParserRegistry);
     await indexer.index("/tmp").catch(() => {});
     expect(mockStore.flush).toHaveBeenCalled();
     expect(callOrder[0]).toBe("flush");
+  });
+
+  test("writes model to project config after indexing", async () => {
+    const { Indexer } = await import("../../src/indexer/indexer.js");
+    const indexer = new Indexer(mockEmbedder, mockStore, mockParserRegistry);
+    await indexer.index("/tmp", { model: "Xenova/test-model" }).catch(() => {});
+
+    const fs = await import("fs");
+    const configPath = "/tmp/.ferret/index-info.json";
+    expect(fs.existsSync(configPath)).toBe(true);
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    expect(config.model).toBe("Xenova/test-model");
   });
 });
