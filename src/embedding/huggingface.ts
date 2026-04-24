@@ -2,11 +2,12 @@ import { pipeline, env, type FeatureExtractionPipeline } from "@huggingface/tran
 import path from "path";
 import os from "os";
 import type { Embedder } from "./types.js";
+import { DEFAULT_EMBEDDING_MODEL } from "../projects.js";
 
 env.cacheDir = path.join(os.homedir(), ".cache", "ferret");
 env.allowLocalModels = false;
 
-export const DEFAULT_MODEL = "Xenova/all-MiniLM-L6-v2";
+export const DEFAULT_MODEL = DEFAULT_EMBEDDING_MODEL;
 
 const MAX_TOKENS_CAP = 32_768;
 const CHARS_PER_TOKEN = 4;

@@ -73,6 +73,7 @@ export class LanceDbStore implements ChunkStore {
     const tableNames = await db.tableNames();
     if (tableNames.includes(CHUNKS_TABLE)) {
       this._chunksTable = await db.openTable(CHUNKS_TABLE);
+      // The existing table already has Float16 schema from createTable; LanceDB enforces it on add().
       await this._chunksTable.add(rows);
     } else {
       const dim = chunks[0].vector.length;
