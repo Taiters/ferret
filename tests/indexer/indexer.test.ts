@@ -1,4 +1,5 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
+import { rmSync } from "fs";
 import type { Embedder } from "../../src/embedding/types.js";
 import type { ChunkStore } from "../../src/store/types.js";
 import type { ParserRegistry } from "../../src/ingestion/parserRegistry.js";
@@ -27,6 +28,12 @@ const mockParserRegistry = {
 
 describe("Indexer", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  afterEach(() => {
+    try {
+      rmSync("/tmp/.ferret/index-info.json", { force: true });
+    } catch {}
+  });
 
   test("flushes the store before indexing", async () => {
     const callOrder: string[] = [];
