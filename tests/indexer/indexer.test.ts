@@ -15,8 +15,15 @@ const mockStore: ChunkStore = {
   getSymbol: vi.fn().mockResolvedValue(null),
   getGraphEdges: vi.fn().mockResolvedValue({ calls: [], calledBy: [] }),
   getStats: vi.fn().mockResolvedValue({ chunks: 0, graphNodes: 0 }),
+  sampleChunks: vi.fn().mockResolvedValue([]),
   disconnect: vi.fn().mockResolvedValue(undefined),
 };
+
+const mockParserRegistry = {
+  registeredExtensions: vi.fn().mockReturnValue([]),
+  get: vi.fn().mockReturnValue(undefined),
+  parseFile: vi.fn().mockReturnValue({ chunks: [], graph: new Map() }),
+} as unknown as ParserRegistry;
 
 describe("Indexer", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -32,9 +39,21 @@ describe("Indexer", () => {
       return Promise.resolve();
     });
     const { Indexer } = await import("../../src/indexer/indexer.js");
-    const indexer = new Indexer(mockEmbedder, mockStore, {} as ParserRegistry);
+    const indexer = new Indexer(mockEmbedder, mockStore, mockParserRegistry);
     await indexer.index("/tmp").catch(() => {});
     expect(mockStore.flush).toHaveBeenCalled();
     expect(callOrder[0]).toBe("flush");
+  });
+
+  test("writes model to project config after indexing", async () => {
+    const { Indexer } = await import("../../src/indexer/indexer.js");
+    const indexer = new Indexer(mockEmbedder, mockStore, mockParserRegistry);
+    await indexer.index("/tmp", { model: "Xenova/test-model" }).catch(() => {});
+
+    const fs = await import("fs");
+    const configPath = "/tmp/.ferret/index-info.json";
+    expect(fs.existsSync(configPath)).toBe(true);
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    expect(config.model).toBe("Xenova/test-model");
   });
 });
