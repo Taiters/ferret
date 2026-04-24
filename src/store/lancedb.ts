@@ -145,6 +145,7 @@ export class LanceDbStore implements ChunkStore {
       config: Index.fts({ withPosition: false }),
       replace: true,
     });
+    await table.optimize({ cleanupOlderThan: new Date() });
   }
 
   private async ftsSearch(query: string, topK: number): Promise<Array<{ id: string; rank: number }>> {
