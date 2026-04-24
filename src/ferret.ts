@@ -259,7 +259,7 @@ benchmark
   .option("-p, --project <path>", "Explicit project path (overrides CWD detection)")
   .action(async (opts: { sample: string; model: string; project?: string }) => {
     const projectRoot = opts.project ? path.resolve(opts.project) : resolveProjectFromCwd() ?? process.cwd();
-    const store = new LanceDbStore(resolveDbPath(opts.project));
+    const store = new LanceDbStore(localDbPath(projectRoot));
     try {
       await generateBenchmark(store, {
         sample: parseInt(opts.sample),
